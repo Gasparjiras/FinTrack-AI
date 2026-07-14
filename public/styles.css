@@ -4444,3 +4444,188 @@ body:not(.dashboard-active) #loginForm button {
     justify-content: space-between;
   }
 }
+
+/* Professional polish: readable AI report and category planning without manual limits. */
+.app-view[data-page="ia"],
+.app-view[data-page="categorias"] {
+  max-width: 1180px;
+}
+
+.app-view[data-page="ia"] .ai-report {
+  background: #ffffff;
+  border: 1px solid #dde7e2;
+  box-shadow: 0 18px 45px rgba(16, 31, 27, .08);
+}
+
+.app-view[data-page="ia"] .consultant-card {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 16px;
+  border: 1px solid #c8ddd5 !important;
+  border-left: 5px solid #0f8f73 !important;
+  border-radius: 18px !important;
+  padding: 18px !important;
+  background: linear-gradient(135deg, #f7fcfa, #eef8f4) !important;
+  color: #10201b !important;
+}
+
+.app-view[data-page="ia"] .consultant-card h3,
+.app-view[data-page="ia"] .consultant-card p,
+.app-view[data-page="ia"] .consultant-card span,
+.app-view[data-page="ia"] .ai-section,
+.app-view[data-page="ia"] .ai-section h3,
+.app-view[data-page="ia"] .insight-line span {
+  color: #10201b !important;
+}
+
+.app-view[data-page="ia"] .consultant-card p {
+  color: #41534d !important;
+  font-weight: 650;
+}
+
+.app-view[data-page="ia"] .consultant-label {
+  color: #0f8f73 !important;
+}
+
+.app-view[data-page="ia"] .ai-section {
+  border-top: 1px solid #e5ece8;
+  padding-top: 16px;
+}
+
+.app-view[data-page="ia"] .insight-line {
+  border: 1px solid #e3ebe7;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fbfdfc;
+}
+
+.app-view[data-page="ia"] .recommendation-card,
+.app-view[data-page="ia"] .ai-alert,
+.budget-suggestion-card {
+  border: 1px solid #e1e9e5;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #10201b;
+  box-shadow: 0 8px 24px rgba(16, 31, 27, .05);
+}
+
+.budget-suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.budget-suggestion-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.budget-suggestion-card strong,
+.budget-suggestion-card b {
+  color: #10201b;
+}
+
+.budget-suggestion-card span,
+.budget-suggestion-card small {
+  color: #65756f;
+  line-height: 1.4;
+}
+
+.budget-suggestion-card.reduzir {
+  border-color: #efc3bd;
+  background: #fff8f6;
+}
+
+.category-layout {
+  align-items: stretch;
+}
+
+.app-view[data-page="categorias"] .form-panel {
+  min-height: auto;
+}
+
+.app-view[data-page="categorias"] .category-card {
+  border-radius: 18px;
+  border-color: #dfe8e4;
+  box-shadow: 0 14px 34px rgba(16, 31, 27, .07);
+}
+
+.app-view[data-page="categorias"] .category-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.app-view[data-page="categorias"] .category-card {
+  align-content: start;
+  min-height: 216px;
+  padding: 18px;
+}
+
+.app-view[data-page="categorias"] .category-card-head {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.app-view[data-page="categorias"] .category-card-head > div:not(.row-actions) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+}
+
+.app-view[data-page="categorias"] .category-card-head h3 {
+  font-size: 18px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-view[data-page="categorias"] .category-card-head p {
+  max-width: 100%;
+  margin-top: 6px;
+  color: #596b64;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-view[data-page="categorias"] .category-status {
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.app-view[data-page="categorias"] .row-actions {
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  align-self: start;
+}
+
+.app-view[data-page="categorias"] .category-numbers {
+  align-items: end;
+  padding-top: 2px;
+}
+
+.app-view[data-page="categorias"] .category-numbers span {
+  max-width: 145px;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.app-view[data-page="categorias"] .category-card small {
+  font-weight: 800;
+}
+
+.app-view[data-page="categorias"] .category-card.status-dentro {
+  background: #fbfdfc;
+}
+
+.app-view[data-page="categorias"] .category-card.status-acima {
+  border-color: #efc3bd;
+  background: #fffaf9;
+}
+
+.app-view[data-page="categorias"] .category-card.status-neutro {
+  background: #fbfdfc;
+}

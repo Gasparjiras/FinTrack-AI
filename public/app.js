@@ -492,24 +492,30 @@ function renderCategoryOptions() {
 function renderCategoryCards() {
   const grid = document.querySelector("#categoriesGrid");
   grid.innerHTML = categories.filter((item) => item.name !== "Receita").map((item) => {
-    const width = Math.min(item.percentage, 100);
-    const statusLabels = { dentro: "Dentro do limite", atencao: "Atenção", acima: "Acima do limite" };
-    const hasLimit = Number(item.monthly_limit || 0) > 0;
-    const status = !hasLimit
-      ? "Sem limite definido"
-      : item.status === "acima"
-        ? `Acima em ${currency.format(Math.abs(item.remaining))}`
-        : `${currency.format(Math.max(item.remaining || 0, 0))} disponível`;
+    const suggestion = categorySuggestionBudget(item.name);
+    const recommended = suggestion?.suggestedMonthly || 0;
+    const spent = Number(item.spent || 0);
+    const percentage = recommended > 0 ? Math.round((spent / recommended) * 100) : 0;
+    const width = Math.min(percentage, 100);
+    const statusKey = suggestion?.status === "reduzir" ? "acima" : spent > 0 ? "dentro" : "neutro";
+    const statusLabels = { dentro: "Dentro da sugestão", acima: "Reduzir", neutro: "Sem gasto" };
+    const status = suggestion
+      ? suggestion.reason
+      : "A IA sugerirá um valor quando houver gastos nesta categoria.";
     return `
-      <article class="category-card status-${item.status}">
-        <div class="category-card-head"><span class="category-color" style="background:${item.color}"></span><div><h3>${escapeHtml(item.name)}</h3><p>${status}</p></div><span class="category-status">${statusLabels[item.status] || "Dentro do limite"}</span><div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div></div>
-        <div class="category-numbers"><strong>${currency.format(item.spent)}</strong><span>${hasLimit ? `de ${currency.format(item.monthly_limit)}` : "limite não definido"}</span></div>
-        <div class="progress-track"><span style="width:${width}%;background:${statusColor(item, item.color)}"></span></div>
-        <small>${hasLimit ? `${item.percentage}% do limite` : "Defina um limite para ativar alertas"}</small>
+      <article class="category-card status-${statusKey}">
+        <div class="category-card-head"><span class="category-color" style="background:${item.color}"></span><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(status)}</p></div><span class="category-status">${statusLabels[statusKey]}</span><div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div></div>
+        <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `sugestão ${currency.format(recommended)}/mês` : "aguardando dados"}</span></div>
+        <div class="progress-track"><span style="width:${width}%;background:${statusKey === "acima" ? "#c2463f" : item.color}"></span></div>
+        <small>${recommended > 0 ? `${percentage}% da sugestão mensal` : "Cadastre lançamentos para receber uma sugestão"}</small>
       </article>
     `;
   }).join("");
   refreshIcons();
+}
+
+function categorySuggestionBudget(categoryName) {
+  return (analysis?.categoryBudgetSuggestions || []).find((item) => item.category === categoryName) || null;
 }
 
 document.querySelector("#categoriesGrid").addEventListener("click", async (event) => {
@@ -519,7 +525,6 @@ document.querySelector("#categoriesGrid").addEventListener("click", async (event
     const item = categories.find((entry) => String(entry.id) === String(button.dataset.categoryEdit));
     categoryForm.elements.id.value = item.id;
     categoryForm.elements.name.value = item.name;
-    categoryForm.elements.monthlyLimit.value = item.monthly_limit;
     categoryForm.elements.color.value = item.color;
     document.querySelector("#categoryFormTitle").textContent = "Editar categoria";
     setHidden(document.querySelector("#cancelCategoryBtn"), false);
@@ -566,29 +571,31 @@ function resetCategoryForm() {
 
 function renderDashboardBudgets() {
   const container = document.querySelector("#dashboardBudgets");
-  const items = categories
-    .filter((item) => item.name !== "Receita" && item.monthly_limit > 0)
-    .sort((a, b) => (b.percentage || 0) - (a.percentage || 0))
+  const items = (analysis?.categoryBudgetSuggestions || [])
+    .filter((item) => item.suggestedMonthly > 0)
+    .sort((a, b) => (b.currentMonthly || 0) - (a.currentMonthly || 0))
     .slice(0, 5);
   container.innerHTML = items.map((item) => {
-    const percentage = Math.max(Number(item.percentage || 0), 0);
-    const overAmount = Math.max((item.spent || 0) - (item.monthly_limit || 0), 0);
-    const detail = item.status === "acima"
-      ? `${currency.format(overAmount)} acima do limite de ${currency.format(item.monthly_limit)}`
-      : `${currency.format(Math.max((item.monthly_limit || 0) - (item.spent || 0), 0))} ainda disponível`;
+    const percentage = item.suggestedMonthly > 0 ? Math.round((item.currentMonthly / item.suggestedMonthly) * 100) : 0;
+    const overAmount = Math.max((item.currentMonthly || 0) - (item.suggestedMonthly || 0), 0);
+    const category = categories.find((entry) => entry.name === item.category);
+    const status = item.status === "reduzir" ? "acima" : "dentro";
+    const detail = status === "acima"
+      ? `${currency.format(overAmount)} acima da sugestão mensal de ${currency.format(item.suggestedMonthly)}`
+      : `Dentro da sugestão mensal de ${currency.format(item.suggestedMonthly)}`;
     const fill = Math.min(percentage, 100);
-    const overrun = item.status === "acima" ? Math.min(Math.max(percentage - 100, 8), 34) : 0;
-    const alert = item.status === "acima"
-      ? `<span class="budget-alert"><i data-lucide="triangle-alert"></i>${percentage}% do orçamento utilizado</span>`
+    const overrun = status === "acima" ? Math.min(Math.max(percentage - 100, 8), 34) : 0;
+    const alert = status === "acima"
+      ? `<span class="budget-alert"><i data-lucide="triangle-alert"></i>${percentage}% da sugestão usada</span>`
       : "";
     return `
-      <div class="budget-row status-${item.status}">
-        <div class="budget-label"><strong>${escapeHtml(item.name)}</strong>${alert}<b class="${item.status === "acima" ? "value-negative" : item.status === "atencao" ? "value-warning" : ""}">${percentage}%</b></div>
-        <div class="progress-track budget-track" style="--budget-width:${fill}%;--budget-overrun:${overrun}%;--budget-color:${statusColor(item, item.color)}"><span></span>${overrun ? "<i></i>" : ""}</div>
+      <div class="budget-row status-${status}">
+        <div class="budget-label"><strong>${escapeHtml(item.category)}</strong>${alert}<b class="${status === "acima" ? "value-negative" : ""}">${percentage}%</b></div>
+        <div class="progress-track budget-track" style="--budget-width:${fill}%;--budget-overrun:${overrun}%;--budget-color:${status === "acima" ? "#c2463f" : category?.color || "#146b59"}"><span></span>${overrun ? "<i></i>" : ""}</div>
         <small>${escapeHtml(detail)}</small>
     </div>
     `;
-  }).join("") || `<div class="empty-compact">Cadastre limites para acompanhar seu orçamento.</div>`;
+  }).join("") || `<div class="empty-compact">Cadastre ou importe lançamentos para a IA sugerir gastos por categoria.</div>`;
   refreshIcons();
 }
 
@@ -596,13 +603,12 @@ function updateBudgetStatus() {
   const statusElement = document.querySelector("#budgetStatus");
   const detailElement = document.querySelector("#budgetStatusDetail");
   if (!statusElement || !detailElement) return;
-  const tracked = categories.filter((item) => item.name !== "Receita" && item.monthly_limit > 0);
-  const over = tracked.filter((item) => item.status === "acima");
-  const attention = tracked.filter((item) => item.status === "atencao");
-  statusElement.textContent = over.length ? `${over.length} acima` : attention.length ? `${attention.length} em atenção` : `${tracked.length} dentro`;
+  const tracked = analysis?.categoryBudgetSuggestions || [];
+  const over = tracked.filter((item) => item.status === "reduzir");
+  statusElement.textContent = over.length ? `${over.length} para reduzir` : tracked.length ? `${tracked.length} analisadas` : "Aguardando dados";
   detailElement.textContent = over.length
-    ? over.map((item) => item.name).join(", ")
-    : attention.length ? attention.map((item) => item.name).join(", ") : "Nenhum alerta";
+    ? over.map((item) => item.category).join(", ")
+    : tracked.length ? "Dentro da sugestão" : "Cadastre lançamentos";
 }
 
 function statusColor(item, fallback) {
@@ -799,6 +805,8 @@ async function loadAnalysis(useAI) {
   analysis = await api(`/api/ai/analysis${useAI ? "?useAI=1" : ""}`);
   updateSummaryKpis();
   renderGoalSummary();
+  renderCategoryCards();
+  renderDashboardBudgets();
   if (useAI) renderAIReport();
   renderVisibleCharts(document.querySelector(".app-view.active")?.dataset.page || "dashboard");
 }
@@ -902,8 +910,8 @@ function renderAIReport() {
     ...(ai?.alerts || []),
     ...analysis.budgetAlerts.map((item) => ({
       severity: "atencao",
-      title: `${item.category} acima do limite`,
-      message: `O gasto ultrapassou o planejado em ${currency.format(item.exceededBy)}.`,
+      title: `${item.category} acima da sugestão`,
+      message: `A IA sugere reduzir aproximadamente ${currency.format(item.exceededBy)} por mês nessa categoria.`,
     })),
     ...analysis.anomalies.map((item) => ({
       severity: item.severity,
@@ -925,6 +933,7 @@ function renderAIReport() {
     ${renderTextBlock("Principais gastos", blocks.mainExpenses, "receipt-text")}
     ${alerts.length ? `<div class="ai-section"><h3>Alertas</h3><div class="ai-alerts">${alerts.map((item) => `<div class="ai-alert ${escapeHtml(item.severity)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}</div></div>` : renderTextBlock("Alertas", analysis.aiBlocks?.alerts || [], "triangle-alert")}
     <div class="ai-section"><h3>Oportunidades de economia</h3><div class="recommendations">${recommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}</div></div>
+    ${renderBudgetSuggestionBlock()}
     ${renderGoalPlanBlock(ai)}
     ${renderTextBlock("Próximas ações recomendadas", blocks.nextActions, "list-checks")}
   `;
@@ -951,6 +960,25 @@ function renderClassificationSummaryBlock() {
 function renderTextBlock(title, items, icon) {
   const list = (items || []).filter(Boolean);
   return `<div class="ai-section"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((item) => `<div class="insight-line"><i data-lucide="${icon}"></i><span>${escapeHtml(item)}</span></div>`).join("") : `<div class="empty-compact">Sem dados suficientes para este bloco.</div>`}</div>`;
+}
+
+function renderBudgetSuggestionBlock() {
+  const items = (analysis?.categoryBudgetSuggestions || []).slice(0, 6);
+  if (!items.length) return "";
+  return `
+    <div class="ai-section">
+      <h3>Quanto gastar por categoria</h3>
+      <div class="budget-suggestion-grid">
+        ${items.map((item) => `
+          <article class="budget-suggestion-card ${item.status}">
+            <div><strong>${escapeHtml(item.category)}</strong><span>${escapeHtml(item.reason)}</span></div>
+            <b>${currency.format(item.suggestedMonthly)}/mês</b>
+            <small>Hoje: ${currency.format(item.currentMonthly)}/mês</small>
+          </article>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderGoalPlanBlock(ai) {
@@ -1129,33 +1157,39 @@ function renderGoalChart(key, canvasId) {
 }
 
 function renderBudgetChart() {
-  const items = categories.filter((item) => item.name !== "Receita" && item.monthly_limit > 0).slice(0, 8);
+  const items = (analysis?.categoryBudgetSuggestions || []).filter((item) => item.suggestedMonthly > 0).slice(0, 8);
   if (!items.length) {
-    setChartEmpty("budget", "budgetChart", "Defina limites por categoria para gerar o gráfico.");
+    setChartEmpty("budget", "budgetChart", "Cadastre ou importe lançamentos para a IA sugerir um valor por categoria.");
     return;
   }
   setChartEmpty("budget", "budgetChart", "");
   createChart("budget", "budgetChart", {
     type: "bar",
-    data: { labels: items.map((item) => item.name), datasets: [{ label: "Limite", data: items.map((item) => item.monthly_limit), backgroundColor: "#c8d4df", borderRadius: 5 }, { label: "Gasto", data: items.map((item) => item.spent), backgroundColor: items.map((item) => statusColor(item, item.color)), borderRadius: 5 }] },
+    data: {
+      labels: items.map((item) => item.category),
+      datasets: [
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#c8d4df", borderRadius: 5 },
+        { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => item.status === "reduzir" ? "#c2463f" : "#146b59"), borderRadius: 5 },
+      ],
+    },
     options: { ...chartOptions(), indexAxis: "y", plugins: { legend: { position: "top" } } },
   });
 }
 
 function renderBudgetComparisonChart() {
-  const items = categories.filter((item) => item.name !== "Receita" && item.monthly_limit > 0).slice(0, 8);
+  const items = (analysis?.categoryBudgetSuggestions || []).filter((item) => item.suggestedMonthly > 0).slice(0, 8);
   if (!items.length) {
-    setChartEmpty("budgetComparison", "budgetComparisonChart", "Defina limites por categoria para comparar planejado e realizado.");
+    setChartEmpty("budgetComparison", "budgetComparisonChart", "A IA mostrará sugestão x gasto real após você importar lançamentos.");
     return;
   }
   setChartEmpty("budgetComparison", "budgetComparisonChart", "");
   createChart("budgetComparison", "budgetComparisonChart", {
     type: "bar",
     data: {
-      labels: items.map((item) => item.name),
+      labels: items.map((item) => item.category),
       datasets: [
-        { label: "Limite", data: items.map((item) => item.monthly_limit), backgroundColor: "#d8e2dd", borderRadius: 6 },
-        { label: "Gasto real", data: items.map((item) => item.spent), backgroundColor: items.map((item) => statusColor(item, item.color)), borderRadius: 6 },
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#d8e2dd", borderRadius: 6 },
+        { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => item.status === "reduzir" ? "#c2463f" : "#146b59"), borderRadius: 6 },
       ],
     },
     options: { ...chartOptions(), plugins: { legend: { display: true, position: "top" } } },

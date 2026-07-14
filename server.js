@@ -1161,6 +1161,54 @@ function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
   };
 }
 
+function buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPlan) {
+  const safeMonths = Math.max(Number(months || 1), 1);
+  const monthlyIncome = totalIncome > 0 ? totalIncome / safeMonths : 0;
+  const goalReserve = Math.max(Number(goalPlan?.monthlyTarget || 0), 0);
+  const generalReserve = monthlyIncome > 0 ? monthlyIncome * 0.12 : 0;
+  const availableForExpenses = Math.max(monthlyIncome - Math.max(goalReserve, generalReserve), 0);
+  const reductionFactors = {
+    "Assinaturas": 0.55,
+    "Lazer": 0.75,
+    "Alimentação": 0.82,
+    "Compras": 0.78,
+    "Transporte": 0.92,
+    "Mercado": 0.94,
+    "Contas fixas": 0.96,
+    "Saúde": 1,
+    "Educação": 1,
+    "Metas": 1,
+    "Outros": 0.85,
+  };
+  const base = categories
+    .filter((item) => item.category !== "Receita")
+    .map((item) => {
+      const currentMonthly = Number(item.total || 0) / safeMonths;
+      const factor = reductionFactors[item.category] ?? 0.9;
+      const suggestedMonthly = Math.max(currentMonthly * factor, 0);
+      return { ...item, currentMonthly, suggestedMonthly };
+    });
+  const baseTotal = base.reduce((sum, item) => sum + item.suggestedMonthly, 0);
+  const scale = availableForExpenses > 0 && baseTotal > availableForExpenses ? availableForExpenses / baseTotal : 1;
+  return base.map((item) => {
+    const suggestedMonthly = Number((item.suggestedMonthly * scale).toFixed(2));
+    const difference = Number((item.currentMonthly - suggestedMonthly).toFixed(2));
+    const status = item.currentMonthly > suggestedMonthly * 1.08 ? "reduzir" : "adequado";
+    const reason = status === "reduzir"
+      ? `Tente manter ${item.category} perto de ${money(suggestedMonthly)} por mês para abrir espaço para metas.`
+      : `${item.category} está em um nível compatível com sua renda e meta atual.`;
+    return {
+      category: item.category,
+      currentMonthly: Number(item.currentMonthly.toFixed(2)),
+      suggestedMonthly,
+      difference,
+      share: item.share,
+      status,
+      reason,
+    };
+  }).sort((a, b) => b.currentMonthly - a.currentMonthly);
+}
+
 function goalPreview(goal) {
   if (!goal) return null;
   const targetValue = Number(goal.target_value || 0);
@@ -1216,17 +1264,17 @@ function detectAnomalies(transactions, categories, categoryBudgets, months) {
   for (const item of categoryBudgets.filter((entry) => entry.name !== "Receita" && entry.monthly_limit > 0)) {
     if (item.spent > item.monthly_limit) {
       anomalies.push({
-        type: "limite",
+        type: "sugestao",
         severity: "critico",
-        title: `${item.name} acima do limite`,
-        message: `Você ultrapassou o limite em ${money(item.spent - item.monthly_limit)}.`,
+        title: `${item.name} acima da sugestão`,
+        message: `Você gastou ${money(item.spent - item.monthly_limit)} acima da sugestão mensal.`,
       });
     } else if (item.spent >= item.monthly_limit * 0.7) {
       anomalies.push({
-        type: "limite",
+        type: "sugestao",
         severity: "atencao",
-        title: `${item.name} perto do limite`,
-        message: `Você já usou ${item.percentage}% do limite mensal desta categoria.`,
+        title: `${item.name} perto da sugestão`,
+        message: `Você já usou ${item.percentage}% da sugestão mensal desta categoria.`,
       });
     }
   }
@@ -1396,16 +1444,8 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     }];
   }
   const potentialMonthlySavings = recommendations.reduce((sum, item) => sum + item.potentialMonthlySavings, 0);
-  const budgetAlerts = categoryBudgets
-    .filter((item) => item.monthly_limit > 0 && item.spent > item.monthly_limit)
-    .map((item) => ({
-      category: item.name,
-      limit: item.monthly_limit,
-      spent: item.spent,
-      exceededBy: item.spent - item.monthly_limit,
-    }))
-    .sort((a, b) => b.exceededBy - a.exceededBy);
-  const anomalies = detectAnomalies(transactions, categories, categoryBudgets, monthSet);
+  let budgetAlerts = [];
+  const anomalies = detectAnomalies(transactions, categories, [], monthSet);
   const insights = [];
   if (transactions.length === 0) {
     insights.push("Cadastre transações ou importe um extrato para receber uma análise personalizada.");
@@ -1417,9 +1457,19 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     if (totalIncome > 0 && totalExpenses / totalIncome > 0.85) insights.push("Mais de 85% da renda foi consumida por despesas. Uma meta saudável é reservar ao menos 10% a 20% da renda.");
     if (transactions.some((item) => /tarifa|juros|multa|rotativo/i.test(item.description))) insights.push("Há possíveis tarifas, juros ou multas no extrato. Verifique se podem ser evitados ou renegociados.");
     if (pendingCount > 0) insights.push(`${pendingCount} transação(ões) ainda precisam de categoria. Corrija apenas essas pendências para deixar a análise mais precisa.`);
-    if (budgetAlerts.length) insights.push(`Você ultrapassou o limite em ${budgetAlerts.map((item) => item.category).join(", ")}.`);
   }
   const goalPlan = buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings);
+  const categoryBudgetSuggestions = buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPlan);
+  budgetAlerts = categoryBudgetSuggestions
+    .filter((item) => item.status === "reduzir" && item.difference > 0)
+    .map((item) => ({
+      category: item.category,
+      limit: item.suggestedMonthly,
+      spent: item.currentMonthly,
+      exceededBy: item.difference,
+    }))
+    .sort((a, b) => b.exceededBy - a.exceededBy);
+  if (budgetAlerts.length) insights.push(`A IA sugere reduzir gastos em ${budgetAlerts.map((item) => item.category).join(", ")}.`);
   if (goalPlan) {
     const objectiveLabels = {
       reserva: "montar uma reserva de emergência",
@@ -1446,7 +1496,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     ],
     mainExpenses: largestExpenses.map((item) => `${item.description}: ${money(item.value)} em ${item.category}.`),
     alerts: [
-      ...budgetAlerts.map((item) => `Você ultrapassou o limite de ${item.category} em ${money(item.exceededBy)}.`),
+      ...budgetAlerts.map((item) => `A IA sugere reduzir ${item.category} em cerca de ${money(item.exceededBy)} por mês.`),
       ...anomalies.map((item) => item.message),
     ].slice(0, 6),
     savingsOpportunities: recommendations.map((item) => item.message),
@@ -1460,7 +1510,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     nextActions: [
       goalPlan ? `Separe ${money(goalPlan.monthlyTarget)} para a meta assim que a renda entrar.` : "Cadastre uma meta com valor, prazo e valor já guardado.",
       recommendations[0] ? recommendations[0].message : "Cadastre mais gastos para encontrar oportunidades de economia.",
-      anomalies[0] ? `Revise o alerta: ${anomalies[0].title}.` : "Acompanhe os limites por categoria semanalmente.",
+      categoryBudgetSuggestions[0] ? `Use a sugestão de orçamento para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
     ],
   };
   return {
@@ -1480,6 +1530,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     potentialMonthlySavings,
     pendingCount,
     categoryBudgets,
+    categoryBudgetSuggestions,
     classificationSummary,
     budgetAlerts,
     anomalies,
@@ -1507,6 +1558,7 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       pendingTransactions: localAnalysis.pendingCount,
     },
     categoryRanking: localAnalysis.categoryRanking.slice(0, 8),
+    categoryBudgetSuggestions: (localAnalysis.categoryBudgetSuggestions || []).slice(0, 8),
     monthlyEvolution: localAnalysis.monthlyEvolution,
     calculatedOpportunities: localAnalysis.recommendations.map((item) => ({
       category: item.category,
@@ -1652,10 +1704,8 @@ function normalizeManualTransaction(input) {
 
 function validateCategoryInput(input) {
   const name = String(input.name || "").trim();
-  const monthlyLimit = Number(input.monthlyLimit);
   const color = String(input.color || "").trim();
   if (name.length < 2 || name.length > 40) return "Nome da categoria deve ter entre 2 e 40 caracteres.";
-  if (!Number.isFinite(monthlyLimit) || monthlyLimit < 0) return "O limite mensal deve ser zero ou maior.";
   if (!/^#[0-9a-f]{6}$/i.test(color)) return "Selecione uma cor válida.";
   return null;
 }
@@ -1804,7 +1854,7 @@ async function handleApi(req, res) {
         const validation = validateCategoryInput(body);
         if (validation) return send(res, 400, { error: validation });
         const result = db.prepare("INSERT INTO categories (user_id, name, monthly_limit, color) VALUES (?, ?, ?, ?)")
-          .run(user.id, body.name.trim(), Number(body.monthlyLimit), body.color);
+          .run(user.id, body.name.trim(), 0, body.color);
         audit(user.id, "CATEGORY_CREATED", { categoryId: result.lastInsertRowid, name: body.name.trim() }, req);
         return send(res, 201, { id: result.lastInsertRowid });
       }
@@ -1823,7 +1873,7 @@ async function handleApi(req, res) {
         db.exec("BEGIN");
         try {
           db.prepare("UPDATE categories SET name = ?, monthly_limit = ?, color = ? WHERE id = ? AND user_id = ?")
-            .run(body.name.trim(), Number(body.monthlyLimit), body.color, category.id, user.id);
+            .run(body.name.trim(), 0, body.color, category.id, user.id);
           if (category.name !== body.name.trim()) {
             db.prepare("UPDATE transactions SET category = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND category = ?")
               .run(body.name.trim(), user.id, category.name);

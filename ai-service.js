@@ -193,7 +193,7 @@ async function generateFinancialPlan(context) {
     "Divida a resposta nos blocos: diagnóstico financeiro, principais gastos, alertas, oportunidades, plano da meta e próximas ações.",
     "Gere recomendações práticas, específicas e quantificadas em reais por mês.",
     "Relacione o plano com a meta, valor já guardado, prazo, modo de economia, saldo médio e categorias de maior gasto.",
-    "Use anomalias e limites por categoria quando estiverem no contexto.",
+    "Use anomalias e sugestões de orçamento por categoria quando estiverem no contexto.",
     "Pergunte somente sobre transações marcadas como Categoria pendente.",
     "Não prometa retorno de investimento e não ofereça aconselhamento financeiro regulado.",
     "Se o extrato não tiver renda, deixe claro que a capacidade mensal é uma estimativa incompleta.",
