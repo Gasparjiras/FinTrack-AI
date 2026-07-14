@@ -182,7 +182,14 @@
                 <h1 id="pageTitle">Dashboard</h1>
               </div>
               <div class="header-actions">
-                <span id="currentMonth" class="month-pill"></span>
+                <div class="month-control" aria-label="Mês de análise">
+                  <button id="prevMonthBtn" class="month-nav" type="button" title="Mês anterior"><i data-lucide="chevron-left"></i></button>
+                  <label class="month-picker">
+                    <span id="currentMonth"></span>
+                    <input id="analysisMonth" type="month" aria-label="Selecionar mês de análise">
+                  </label>
+                  <button id="nextMonthBtn" class="month-nav" type="button" title="Próximo mês"><i data-lucide="chevron-right"></i></button>
+                </div>
                 <button id="quickExpenseBtn" type="button"><i data-lucide="plus"></i><span>Nova transação</span></button>
               </div>
             </header>

@@ -7056,6 +7056,112 @@ table,
   line-height: 1.35;
 }
 
+.dashboard-active .month-control {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ft-border-soft);
+  border-radius: 16px;
+  padding: 5px;
+  background: var(--ft-card);
+  box-shadow: var(--ft-shadow-card);
+}
+
+.dashboard-active .month-picker {
+  position: relative;
+  min-width: 158px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 12px;
+  color: var(--ft-text);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.dashboard-active .month-picker span {
+  text-transform: capitalize;
+}
+
+.dashboard-active .month-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dashboard-active .month-nav {
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(14, 31, 27, .08);
+  border-radius: 12px;
+  padding: 0;
+  background: #F7F5F0 !important;
+  color: var(--ft-text) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-active .month-nav:hover {
+  background: rgba(31, 138, 95, .1) !important;
+  color: var(--ft-emerald) !important;
+}
+
+.monthly-comparison-block > p {
+  margin: 0 0 14px;
+  color: var(--ft-muted);
+  line-height: 1.55;
+}
+
+.month-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.month-compare-grid article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(14, 31, 27, .1);
+  border-radius: 16px;
+  padding: 14px;
+  background: #FFFDF8;
+}
+
+.month-compare-grid span {
+  color: var(--ft-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.month-compare-grid strong {
+  color: var(--ft-text);
+  font-size: 22px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.month-compare-grid small {
+  color: var(--ft-muted);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.month-compare-grid article.is-good {
+  border-color: rgba(31, 138, 95, .24);
+  background: rgba(31, 138, 95, .055);
+}
+
+.month-compare-grid article.is-bad {
+  border-color: rgba(192, 57, 43, .22);
+  background: rgba(192, 57, 43, .045);
+}
+
 @media (max-width: 900px) {
   .goal-summary {
     grid-template-columns: 1fr 1fr !important;
@@ -7082,5 +7188,10 @@ table,
   .dashboard-active .category-chart-card .dashboard-chart {
     min-height: 240px;
     height: 240px;
+  }
+
+  .dashboard-active .month-control,
+  .dashboard-active .month-picker {
+    width: 100%;
   }
 }

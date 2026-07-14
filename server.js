@@ -1114,6 +1114,111 @@ function addMonthsLabel(months) {
   return date.toISOString().slice(0, 7);
 }
 
+function normalizeMonthParam(value) {
+  const month = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
+}
+
+function shiftMonthValue(value, offset) {
+  const month = normalizeMonthParam(value);
+  if (!month) return null;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + Number(offset || 0), 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function filterTransactionsForMonth(transactions, month) {
+  const normalizedMonth = normalizeMonthParam(month);
+  if (!normalizedMonth) return transactions || [];
+  return (transactions || []).filter((item) => String(item.date || "").startsWith(normalizedMonth));
+}
+
+function summarizeTransactionsForComparison(transactions) {
+  const income = transactions.filter((item) => item.value > 0).reduce((sum, item) => sum + Number(item.value || 0), 0);
+  const expenses = transactions.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(Number(item.value || 0)), 0);
+  return {
+    income,
+    expenses,
+    balance: income - expenses,
+    count: transactions.length,
+  };
+}
+
+function categoryTotalsForComparison(transactions) {
+  const totals = new Map();
+  for (const item of transactions.filter((entry) => entry.value < 0)) {
+    totals.set(item.category, (totals.get(item.category) || 0) + Math.abs(Number(item.value || 0)));
+  }
+  return totals;
+}
+
+function percentChange(current, previous) {
+  if (!previous) return current ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function buildMonthlyComparison(transactions, selectedMonth) {
+  const month = normalizeMonthParam(selectedMonth);
+  if (!month) return null;
+  const previousMonth = shiftMonthValue(month, -1);
+  const currentTransactions = filterTransactionsForMonth(transactions, month);
+  const previousTransactions = filterTransactionsForMonth(transactions, previousMonth);
+  const current = summarizeTransactionsForComparison(currentTransactions);
+  const previous = summarizeTransactionsForComparison(previousTransactions);
+  const hasPrevious = previousTransactions.length > 0;
+  const currentCategories = categoryTotalsForComparison(currentTransactions);
+  const previousCategories = categoryTotalsForComparison(previousTransactions);
+  const categoryNames = [...new Set([...currentCategories.keys(), ...previousCategories.keys()])];
+  const categoryChanges = categoryNames.map((category) => {
+    const currentValue = currentCategories.get(category) || 0;
+    const previousValue = previousCategories.get(category) || 0;
+    return {
+      category,
+      current: currentValue,
+      previous: previousValue,
+      difference: currentValue - previousValue,
+      percent: percentChange(currentValue, previousValue),
+    };
+  }).sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+  const topIncrease = categoryChanges.filter((item) => item.difference > 0).sort((a, b) => b.difference - a.difference)[0] || null;
+  const topReduction = categoryChanges.filter((item) => item.difference < 0).sort((a, b) => a.difference - b.difference)[0] || null;
+  const expenseDifference = current.expenses - previous.expenses;
+  const balanceDifference = current.balance - previous.balance;
+  let summary = "Ainda não há mês anterior com lançamentos para comparar a evolução.";
+  if (hasPrevious) {
+    if (expenseDifference < 0 && balanceDifference >= 0) {
+      summary = `Melhorou em relação ao mês anterior: os gastos caíram ${money(Math.abs(expenseDifference))} e o saldo evoluiu ${money(balanceDifference)}.`;
+    } else if (expenseDifference < 0) {
+      summary = `Os gastos caíram ${money(Math.abs(expenseDifference))} em relação ao mês anterior. Continue acompanhando o saldo para confirmar a melhora.`;
+    } else if (expenseDifference > 0) {
+      summary = `Os gastos aumentaram ${money(expenseDifference)} em relação ao mês anterior.${topIncrease ? ` O maior aumento foi em ${topIncrease.category}.` : ""}`;
+    } else if (balanceDifference > 0) {
+      summary = `Os gastos ficaram estáveis, mas o saldo melhorou ${money(balanceDifference)} em relação ao mês anterior.`;
+    } else {
+      summary = "O mês ficou muito parecido com o anterior. Acompanhe as categorias para buscar pequenos ganhos.";
+    }
+  }
+  return {
+    selectedMonth: month,
+    previousMonth,
+    hasPrevious,
+    current,
+    previous,
+    deltas: {
+      income: current.income - previous.income,
+      expenses: expenseDifference,
+      balance: balanceDifference,
+      incomePercent: percentChange(current.income, previous.income),
+      expensesPercent: percentChange(current.expenses, previous.expenses),
+      balancePercent: percentChange(current.balance, previous.balance),
+    },
+    topIncrease,
+    topReduction,
+    categoryChanges: categoryChanges.slice(0, 8),
+    summary,
+  };
+}
+
 function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
   if (!goal) return null;
   const goalName = String(goal.goal_name || "").trim() || "Meta financeira";
@@ -1343,12 +1448,15 @@ function detectAnomalies(transactions, categories, categoryBudgets, months) {
   return anomalies.slice(0, 6);
 }
 
-function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
-  const totalIncome = transactions.filter((item) => item.value > 0).reduce((sum, item) => sum + item.value, 0);
-  const totalExpenses = transactions.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(item.value), 0);
+function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], options = {}) {
+  const selectedMonth = normalizeMonthParam(options.month);
+  const previousMonth = selectedMonth ? shiftMonthValue(selectedMonth, -1) : null;
+  const analysisTransactions = selectedMonth ? filterTransactionsForMonth(transactions, selectedMonth) : transactions;
+  const totalIncome = analysisTransactions.filter((item) => item.value > 0).reduce((sum, item) => sum + item.value, 0);
+  const totalExpenses = analysisTransactions.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(item.value), 0);
   const balance = totalIncome - totalExpenses;
-  const monthSet = new Set(transactions.map((item) => String(item.date).slice(0, 7)).filter(Boolean));
-  const months = monthSet.size || 1;
+  const monthSet = new Set(analysisTransactions.map((item) => String(item.date).slice(0, 7)).filter(Boolean));
+  const months = selectedMonth ? 1 : monthSet.size || 1;
   const monthlyIncome = totalIncome / months;
   const monthlyExpenses = totalExpenses / months;
   const monthlyBalance = balance / months;
@@ -1363,20 +1471,20 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
   }
   const monthlyEvolution = [...monthlyMap.values()].sort((a, b) => a.month.localeCompare(b.month));
   const byCategory = new Map();
-  for (const item of transactions.filter((entry) => entry.value < 0)) {
+  for (const item of analysisTransactions.filter((entry) => entry.value < 0)) {
     byCategory.set(item.category, (byCategory.get(item.category) || 0) + Math.abs(item.value));
   }
   const categories = [...byCategory.entries()]
     .map(([category, total]) => ({ category, total, share: totalExpenses ? Math.round((total / totalExpenses) * 100) : 0 }))
     .sort((a, b) => b.total - a.total);
   const categoryRanking = categories.map((item, index) => ({ ...item, position: index + 1 }));
-  const largestExpenses = transactions
+  const largestExpenses = analysisTransactions
     .filter((item) => item.value < 0)
     .sort((a, b) => a.value - b.value)
     .slice(0, 5)
     .map((item) => ({ ...item, value: Math.abs(item.value) }));
   const descriptionCounts = new Map();
-  for (const item of transactions.filter((entry) => entry.value < 0)) {
+  for (const item of analysisTransactions.filter((entry) => entry.value < 0)) {
     const key = item.description.toLowerCase().replace(/\d+/g, "").replace(/\s+/g, " ").trim();
     const current = descriptionCounts.get(key) || { description: item.description, count: 0, total: 0 };
     current.count += 1;
@@ -1384,8 +1492,8 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     descriptionCounts.set(key, current);
   }
   const recurring = [...descriptionCounts.values()].filter((item) => item.count >= 2).sort((a, b) => b.total - a.total).slice(0, 5);
-  const pendingCount = transactions.filter((item) => item.category === "Categoria pendente").length;
-  const classificationSummary = transactions.reduce((summary, item) => {
+  const pendingCount = analysisTransactions.filter((item) => item.category === "Categoria pendente").length;
+  const classificationSummary = analysisTransactions.reduce((summary, item) => {
     const source = item.classification_source || "manual";
     const confidence = item.classification_confidence || "manual";
     const type = item.type || transactionType(item.value);
@@ -1407,7 +1515,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     .map((item) => {
       const monthlyCategory = item.total / months;
       const potentialMonthlySavings = monthlyCategory * reductionRates[item.category];
-      const examples = [...new Set(transactions
+      const examples = [...new Set(analysisTransactions
         .filter((transaction) => transaction.value < 0 && transaction.category === item.category)
         .sort((a, b) => a.value - b.value)
         .map((transaction) => transaction.description))]
@@ -1447,9 +1555,11 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
   }
   const potentialMonthlySavings = recommendations.reduce((sum, item) => sum + item.potentialMonthlySavings, 0);
   let budgetAlerts = [];
-  const anomalies = detectAnomalies(transactions, categories, [], monthSet);
+  const allMonthSet = new Set(transactions.map((item) => String(item.date).slice(0, 7)).filter(Boolean));
+  const anomalies = detectAnomalies(transactions, categories, [], allMonthSet);
+  const monthlyComparison = buildMonthlyComparison(transactions, selectedMonth);
   const insights = [];
-  if (transactions.length === 0) {
+  if (analysisTransactions.length === 0) {
     insights.push("Cadastre transações ou importe um extrato para receber uma análise personalizada.");
   } else {
     if (totalIncome === 0 && totalExpenses > 0) insights.push("O arquivo parece conter apenas despesas, como uma fatura de cartão. Cadastre a renda mensal para comparar os gastos com sua capacidade real.");
@@ -1457,9 +1567,10 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     if (balance >= 0 && totalIncome > 0) insights.push("Você fechou o período no positivo. Separe uma parte do saldo para reserva de emergência antes de aumentar gastos.");
     if (categories[0]) insights.push(`A maior concentração de despesas está em ${categories[0].category}, com ${categories[0].share}% dos gastos. Revise esse grupo primeiro.`);
     if (totalIncome > 0 && totalExpenses / totalIncome > 0.85) insights.push("Mais de 85% da renda foi consumida por despesas. Uma meta saudável é reservar ao menos 10% a 20% da renda.");
-    if (transactions.some((item) => /tarifa|juros|multa|rotativo/i.test(item.description))) insights.push("Há possíveis tarifas, juros ou multas no extrato. Verifique se podem ser evitados ou renegociados.");
+    if (analysisTransactions.some((item) => /tarifa|juros|multa|rotativo/i.test(item.description))) insights.push("Há possíveis tarifas, juros ou multas no extrato. Verifique se podem ser evitados ou renegociados.");
     if (pendingCount > 0) insights.push(`${pendingCount} transação(ões) ainda precisam de categoria. Corrija apenas essas pendências para deixar a análise mais precisa.`);
   }
+  if (monthlyComparison?.summary) insights.unshift(monthlyComparison.summary);
   const goalPlan = buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings);
   const categoryBudgetSuggestions = buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPlan);
   budgetAlerts = categoryBudgetSuggestions
@@ -1493,9 +1604,10 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
   }
   const aiBlocks = {
     diagnosis: [
+      monthlyComparison?.summary,
       balance >= 0 ? `Seu saldo do período foi positivo em ${money(balance)}.` : `Seu saldo do período ficou negativo em ${money(Math.abs(balance))}.`,
       categories[0] ? `Sua maior categoria de gasto foi ${categories[0].category}, representando ${categories[0].share}% das despesas.` : "Ainda não há gastos suficientes para identificar padrões.",
-    ],
+    ].filter(Boolean),
     mainExpenses: largestExpenses.map((item) => `${item.description}: ${money(item.value)} em ${item.category}.`),
     alerts: [
       ...budgetAlerts.map((item) => `A IA sugere reduzir ${item.category} em cerca de ${money(item.exceededBy)} por mês.`),
@@ -1516,6 +1628,8 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     ],
   };
   return {
+    selectedMonth,
+    previousMonth,
     totalIncome,
     totalExpenses,
     balance,
@@ -1523,6 +1637,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
     monthlyExpenses,
     monthlyBalance,
     monthlyEvolution,
+    monthlyComparison,
     months,
     categories,
     categoryRanking,
@@ -1543,7 +1658,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = []) {
 }
 
 async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) {
-  if (!isOpenAIConfigured() || transactions.length === 0) {
+  if (!isOpenAIConfigured() || (localAnalysis.totalIncome === 0 && localAnalysis.totalExpenses === 0)) {
     return { plan: null, source: "local", model: null, cached: false, warning: null };
   }
   const context = {
@@ -1582,6 +1697,11 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       severity: item.severity,
       title: item.title,
     })),
+    period: {
+      selectedMonth: localAnalysis.selectedMonth,
+      previousMonth: localAnalysis.previousMonth,
+      monthlyComparison: localAnalysis.monthlyComparison,
+    },
     classificationSummary: localAnalysis.classificationSummary,
     localBlocks: {
       diagnosis: localAnalysis.aiBlocks.diagnosis,
@@ -1591,7 +1711,7 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       nextActions: localAnalysis.aiBlocks.nextActions,
     },
   };
-  const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, localAnalysis.goals || goal);
+  const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, localAnalysis.goals || goal, localAnalysis.selectedMonth);
   const cached = db.prepare("SELECT response_json FROM ai_analysis_cache WHERE user_id = ? AND fingerprint = ?").get(userId, fingerprint);
   if (cached) {
     return { plan: JSON.parse(cached.response_json), source: "openai", model: OPENAI_MODEL, cached: true, warning: null };
@@ -1628,13 +1748,17 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
   }
 }
 
-function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, goal) {
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const monthTransactions = transactions.filter((item) => String(item.date || "").startsWith(currentMonth));
+function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, goal, analysisMonth) {
+  const currentMonth = normalizeMonthParam(analysisMonth) || new Date().toISOString().slice(0, 7);
+  const monthTransactions = filterTransactionsForMonth(transactions, currentMonth);
+  const previousMonth = shiftMonthValue(currentMonth, -1);
+  const previousMonthTransactions = filterTransactionsForMonth(transactions, previousMonth);
   const income = monthTransactions.filter((item) => item.value > 0).reduce((sum, item) => sum + Number(item.value || 0), 0);
   const expenses = monthTransactions.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(Number(item.value || 0)), 0);
+  const previousIncome = previousMonthTransactions.filter((item) => item.value > 0).reduce((sum, item) => sum + Number(item.value || 0), 0);
+  const previousExpenses = previousMonthTransactions.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(Number(item.value || 0)), 0);
   const lastTransactionDate = monthTransactions.map((item) => item.date).filter(Boolean).sort().at(-1) || null;
-  const lastAlteration = monthTransactions.map((item) => item.updated_at || item.created_at || item.date).filter(Boolean).sort().at(-1) || null;
+  const lastAlteration = [...monthTransactions, ...previousMonthTransactions].map((item) => item.updated_at || item.created_at || item.date).filter(Boolean).sort().at(-1) || null;
   const topCategories = {};
   for (const item of monthTransactions) {
     if (item.value >= 0) continue;
@@ -1668,9 +1792,13 @@ function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, go
     model: OPENAI_MODEL,
     userId,
     month: currentMonth,
+    previousMonth,
     transactionCount: monthTransactions.length,
+    previousTransactionCount: previousMonthTransactions.length,
     income: Number(income.toFixed(2)),
     expenses: Number(expenses.toFixed(2)),
+    previousIncome: Number(previousIncome.toFixed(2)),
+    previousExpenses: Number(previousExpenses.toFixed(2)),
     lastTransactionDate,
     lastAlteration,
     categorySnapshot,
@@ -2056,12 +2184,14 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo para liberar a análise financeira." });
+      const selectedMonth = normalizeMonthParam(url.searchParams.get("month")) || new Date().toISOString().slice(0, 7);
       const rows = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
       const goals = getUserGoals(user.id);
       const goal = goals[0] || null;
-      audit(user.id, "AI_ANALYSIS_REQUESTED", { transactions: rows.length }, req);
-      const budgets = getCategoryBudgets(user.id);
-      const localAnalysis = buildFinancialAnalysis(rows, goal, budgets);
+      const selectedRows = filterTransactionsForMonth(rows, selectedMonth);
+      audit(user.id, "AI_ANALYSIS_REQUESTED", { month: selectedMonth, transactions: selectedRows.length }, req);
+      const budgets = getCategoryBudgets(user.id, selectedMonth);
+      const localAnalysis = buildFinancialAnalysis(rows, goal, budgets, { month: selectedMonth });
       localAnalysis.goals = goals;
       const useOpenAI = url.searchParams.get("useAI") === "1";
       const aiResult = useOpenAI

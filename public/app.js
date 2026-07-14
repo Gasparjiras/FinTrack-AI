@@ -28,6 +28,10 @@ const importPreviewBody = document.querySelector("#importPreviewBody");
 const importNotice = document.querySelector("#importNotice");
 const confirmImportBtn = document.querySelector("#confirmImportBtn");
 const exportReportCsvBtn = document.querySelector("#exportReportCsvBtn");
+const currentMonthLabel = document.querySelector("#currentMonth");
+const analysisMonthInput = document.querySelector("#analysisMonth");
+const prevMonthBtn = document.querySelector("#prevMonthBtn");
+const nextMonthBtn = document.querySelector("#nextMonthBtn");
 const categorySuggestion = document.querySelector("#categorySuggestion");
 const goalLivePreview = document.querySelector("#goalLivePreview");
 const goalsList = document.querySelector("#goalsList");
@@ -64,6 +68,7 @@ let categoryManuallyChanged = false;
 let suggestionTimer = null;
 let transactionPage = 1;
 let editingGoalId = null;
+let selectedAnalysisMonth = currentMonthValue();
 const transactionPageSize = 8;
 const charts = {};
 const chartFontFamily = "Inter, Segoe UI, system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
@@ -320,7 +325,7 @@ document.querySelector("#cancelEditBtn").addEventListener("click", resetTransact
 function resetTransactionForm() {
   transactionForm.reset();
   transactionForm.elements.id.value = "";
-  transactionForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  transactionForm.elements.date.value = selectedMonthDefaultDate();
   if (transactionForm.elements.type) transactionForm.elements.type.value = "saida";
   if (transactionForm.elements.paymentMethod) transactionForm.elements.paymentMethod.value = "Manual";
   if (transactionForm.elements.status) transactionForm.elements.status.value = "Concluida";
@@ -436,6 +441,27 @@ transactionSearch?.addEventListener("input", resetTransactionPagination);
 transactionTypeFilter?.addEventListener("change", resetTransactionPagination);
 transactionCategoryFilter?.addEventListener("change", resetTransactionPagination);
 transactionMonthFilter?.addEventListener("change", resetTransactionPagination);
+analysisMonthInput?.addEventListener("change", async () => {
+  try {
+    await changeAnalysisMonth(analysisMonthInput.value);
+  } catch (error) {
+    toast(error.message);
+  }
+});
+prevMonthBtn?.addEventListener("click", async () => {
+  try {
+    await changeAnalysisMonth(shiftMonthValue(selectedAnalysisMonth, -1));
+  } catch (error) {
+    toast(error.message);
+  }
+});
+nextMonthBtn?.addEventListener("click", async () => {
+  try {
+    await changeAnalysisMonth(shiftMonthValue(selectedAnalysisMonth, 1));
+  } catch (error) {
+    toast(error.message);
+  }
+});
 prevTransactionsPage?.addEventListener("click", () => {
   transactionPage -= 1;
   renderTransactionsTable();
@@ -858,12 +884,18 @@ document.querySelector("#analyzeBtn").addEventListener("click", async (event) =>
 });
 
 async function loadAnalysis(useAI) {
-  analysis = await api(`/api/ai/analysis${useAI ? "?useAI=1" : ""}`);
+  const params = new URLSearchParams({ month: selectedAnalysisMonth });
+  if (useAI) params.set("useAI", "1");
+  analysis = await api(`/api/ai/analysis?${params.toString()}`);
+  if (analysis.selectedMonth) {
+    selectedAnalysisMonth = analysis.selectedMonth;
+    syncMonthControls();
+  }
   updateSummaryKpis();
   renderGoalSummary();
   renderCategoryCards();
   renderDashboardBudgets();
-  if (useAI) renderAIReport();
+  renderAIReport();
   renderVisibleCharts(document.querySelector(".app-view.active")?.dataset.page || "dashboard");
 }
 
@@ -914,13 +946,21 @@ function renderAssistantHub() {
   const goalText = goal
     ? `Para ${goal.goal_name}, guarde ${currency.format(goal.monthlyTarget)} por mês.`
     : "Cadastre uma meta para transformar a análise em um plano mensal.";
-  summary.textContent = `${balanceText} ${topText} ${goalText}`;
+  const comparisonText = analysis.monthlyComparison?.hasPrevious ? `${analysis.monthlyComparison.summary} ` : "";
+  summary.textContent = `${comparisonText}${balanceText} ${topText} ${goalText}`;
   const topEl = document.querySelector("#assistantTopCategory");
   const goalEl = document.querySelector("#assistantGoalHint");
   const monthEl = document.querySelector("#assistantMonthlyHint");
   if (topEl) topEl.textContent = top ? `${top.category} (${top.share}%)` : "Sem dados";
   if (goalEl) goalEl.textContent = goal ? `${goal.progressPercentage}% - ${goal.goal_name}` : "Cadastre uma meta";
-  if (monthEl) monthEl.textContent = analysis.totalExpenses > 0 ? `${analysis.months} mês(es) analisado(s)` : "Aguardando gastos";
+  if (monthEl) {
+    if (analysis.monthlyComparison?.hasPrevious) {
+      const delta = Number(analysis.monthlyComparison.deltas?.expenses || 0);
+      monthEl.textContent = `${delta > 0 ? "+" : ""}${currency.format(delta)} vs ${monthLabel(analysis.previousMonth)}`;
+    } else {
+      monthEl.textContent = analysis.totalExpenses > 0 ? `${monthLabel(analysis.selectedMonth || selectedAnalysisMonth)} analisado` : "Aguardando gastos";
+    }
+  }
 }
 
 function renderDashboardGoalCard() {
@@ -986,6 +1026,7 @@ function renderAIReport() {
       <div><span class="consultant-label">${escapeHtml(provider)}</span><h3>Diagnostico financeiro</h3><p>${escapeHtml(summary)}</p></div>
     </article>
     ${renderClassificationSummaryBlock()}
+    ${renderMonthlyComparisonBlock()}
     ${renderTextBlock("Diagnostico financeiro", blocks.diagnosis, "scan-search")}
     ${renderTextBlock("Principais gastos", blocks.mainExpenses, "receipt-text")}
     ${alerts.length ? `<div class="ai-section"><h3>Alertas</h3><div class="ai-alerts">${alerts.map((item) => `<div class="ai-alert ${escapeHtml(item.severity)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}</div></div>` : renderTextBlock("Alertas", analysis.aiBlocks?.alerts || [], "triangle-alert")}
@@ -996,6 +1037,44 @@ function renderAIReport() {
   `;
   if (analysis.aiStatus.warning) toast(analysis.aiStatus.warning);
   refreshIcons();
+}
+
+function renderMonthlyComparisonBlock() {
+  const comparison = analysis?.monthlyComparison;
+  if (!comparison) return "";
+  const currentLabel = monthLabel(comparison.selectedMonth || analysis.selectedMonth || selectedAnalysisMonth);
+  const previousLabel = monthLabel(comparison.previousMonth || analysis.previousMonth);
+  if (!comparison.hasPrevious) {
+    return `
+      <div class="ai-section monthly-comparison-block">
+        <h3>Evolução mensal</h3>
+        <div class="empty-compact">Este é o primeiro mês com lançamentos no período. Quando cadastrar o próximo mês, a IA vai comparar a evolução automaticamente.</div>
+      </div>
+    `;
+  }
+  const metrics = [
+    { label: "Entradas", current: comparison.current.income, previous: comparison.previous.income, delta: comparison.deltas.income },
+    { label: "Gastos", current: comparison.current.expenses, previous: comparison.previous.expenses, delta: comparison.deltas.expenses, expense: true },
+    { label: "Saldo", current: comparison.current.balance, previous: comparison.previous.balance, delta: comparison.deltas.balance },
+  ];
+  return `
+    <div class="ai-section monthly-comparison-block">
+      <h3>Evolução mensal</h3>
+      <p>${escapeHtml(comparison.summary)}</p>
+      <div class="month-compare-grid">
+        ${metrics.map((item) => {
+          const goodDelta = item.expense ? item.delta <= 0 : item.delta >= 0;
+          return `
+            <article class="${goodDelta ? "is-good" : "is-bad"}">
+              <span>${escapeHtml(item.label)}</span>
+              <strong>${currency.format(item.current)}</strong>
+              <small>${escapeHtml(currentLabel)} vs ${escapeHtml(previousLabel)}: ${item.delta > 0 ? "+" : ""}${currency.format(item.delta)}</small>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderClassificationSummaryBlock() {
@@ -1809,6 +1888,41 @@ function monthLabel(value) {
   return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(date);
 }
 
+function currentMonthValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonthValue(value, offset) {
+  const [year, month] = String(value || currentMonthValue()).split("-").map(Number);
+  const date = new Date(year, month - 1 + Number(offset || 0), 1);
+  return currentMonthValue(date);
+}
+
+function selectedMonthDefaultDate() {
+  const today = new Date();
+  const current = currentMonthValue(today);
+  if (selectedAnalysisMonth === current) {
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  }
+  return `${selectedAnalysisMonth}-01`;
+}
+
+function syncMonthControls() {
+  if (analysisMonthInput) analysisMonthInput.value = selectedAnalysisMonth;
+  if (currentMonthLabel) currentMonthLabel.textContent = monthLabel(selectedAnalysisMonth);
+  if (transactionMonthFilter && !transactionMonthFilter.value) transactionMonthFilter.value = selectedAnalysisMonth;
+}
+
+async function changeAnalysisMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ""))) return;
+  selectedAnalysisMonth = month;
+  syncMonthControls();
+  if (transactionMonthFilter) transactionMonthFilter.value = selectedAnalysisMonth;
+  resetTransactionPagination();
+  await loadAnalysis(false);
+  renderVisibleCharts(document.querySelector(".app-view.active")?.dataset.page || "dashboard");
+}
+
 function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -1824,7 +1938,8 @@ async function boot(options = {}) {
     document.querySelector("#sidebarUserName").textContent = firstName;
     document.querySelector("#sidebarUserEmail").textContent = me.user.email || "";
     document.querySelector(".user-avatar").textContent = initials || "U";
-    document.querySelector("#currentMonth").textContent = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date());
+    selectedAnalysisMonth = selectedAnalysisMonth || currentMonthValue();
+    syncMonthControls();
     userConsentAccepted = Boolean(me.consentAccepted);
     updateConsentUi();
     document.body.classList.add("dashboard-active");
