@@ -457,11 +457,12 @@ function renderRecentTransactions() {
   }
   container.innerHTML = transactions.slice(0, 5).map((item) => `
     <div class="recent-item">
-      <span class="recent-dot" style="background:${categoryColor(item.category)}"></span>
+      <span class="recent-icon" style="--item-color:${categoryColor(item.category)}"><i data-lucide="${categoryIcon(item.category, item.value)}"></i></span>
       <div><strong>${escapeHtml(item.description)}</strong><small>${escapeHtml(item.category)} - ${formatDate(item.date)}</small></div>
       <b class="${item.value < 0 ? "value-negative" : "value-positive"}">${currency.format(item.value)}</b>
     </div>
   `).join("");
+  refreshIcons();
 }
 
 function renderStarterState() {
@@ -755,7 +756,7 @@ function renderGoalsList() {
     ${goals.map((goal) => `
       <article class="goal-item-card">
         <div class="goal-item-head">
-          <div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
+          <span class="goal-item-icon"><i data-lucide="${goalIcon(goal.objective)}"></i></span><div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
           <button type="button" class="icon-button secondary" data-goal-edit="${goal.id}" title="Editar meta"><i data-lucide="pencil"></i></button>
         </div>
         <div class="goal-mini-progress"><span style="width:${Math.min(goal.progressPercentage || 0, 100)}%"></span></div>
@@ -1296,6 +1297,33 @@ function categoryColor(name) {
   let hash = 0;
   for (const char of normalized) hash = ((hash << 5) - hash) + char.charCodeAt(0);
   return categoryPalette[Math.abs(hash) % categoryPalette.length];
+}
+
+function categoryIcon(category, value = -1) {
+  if (Number(value) > 0 || category === "Receita") return "arrow-down-left";
+  const key = normalizeText(category);
+  if (key.includes("mercado")) return "shopping-basket";
+  if (key.includes("transporte")) return "car";
+  if (key.includes("assinatura")) return "badge-check";
+  if (key.includes("alimentacao")) return "utensils";
+  if (key.includes("saude")) return "heart-pulse";
+  if (key.includes("educacao")) return "book-open";
+  if (key.includes("lazer")) return "gamepad-2";
+  if (key.includes("compra")) return "shopping-bag";
+  if (key.includes("meta")) return "target";
+  return "receipt";
+}
+
+function goalIcon(objective) {
+  const icons = {
+    reserva: "shield-check",
+    dividas: "badge-dollar-sign",
+    viagem: "plane",
+    compra: "shopping-bag",
+    investimento: "trending-up",
+    outro: "target",
+  };
+  return icons[objective] || "target";
 }
 
 function typeLabel(value) {

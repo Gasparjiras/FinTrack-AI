@@ -5687,17 +5687,99 @@ body.dashboard-active {
 
   .dashboard-active .sidebar {
     position: sticky;
+    top: 0;
+    z-index: 20;
     height: auto;
-    flex-direction: row;
-    align-items: center;
-    padding: 12px;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 12px;
+    padding: 14px;
+    overflow: visible;
+    border-bottom: 1px solid rgba(255, 255, 255, .12);
   }
 
   .dashboard-active .side-nav {
-    display: flex;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
     min-width: 0;
-    overflow-x: auto;
+    overflow: visible;
+  }
+
+  .dashboard-active .sidebar-brand {
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .dashboard-active .sidebar-brand div {
+    display: block;
+  }
+
+  .dashboard-active .sidebar-brand .brand-icon.brand-logo {
+    width: 42px;
+    height: 42px;
+  }
+
+  .dashboard-active .sidebar-brand strong {
+    font-size: 18px;
+  }
+
+  .dashboard-active .sidebar-brand span:last-child {
+    display: none;
+  }
+
+  .dashboard-active .nav-item {
+    width: 100%;
+    min-width: 0;
+    min-height: 58px;
+    display: grid;
+    place-items: center;
+    gap: 5px;
+    padding: 8px 6px;
+    border-radius: 14px;
+    font-size: 11px;
+    line-height: 1.1;
+    text-align: center;
+    justify-self: stretch;
+  }
+
+  .dashboard-active .nav-item span {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-active .nav-item svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .dashboard-active .sidebar-user {
+    min-height: 44px;
+    margin: 0;
+    padding: 6px;
+  }
+
+  .dashboard-active .sidebar-user .user-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .dashboard-active .sidebar-user div:not(.user-avatar),
+  .dashboard-active .sidebar-logout span {
+    display: none;
+  }
+
+  .dashboard-active .sidebar-logout {
+    grid-column: 1 / -1;
+    min-height: 42px;
+    width: 100%;
   }
 
   .dashboard-active .workspace-header {
@@ -5710,6 +5792,21 @@ body.dashboard-active {
 
   .dashboard-secondary-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-active .side-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-active .nav-item {
+    min-height: 54px;
+    font-size: 10px;
+  }
+
+  .dashboard-active .sidebar {
+    padding: 12px 10px;
   }
 }
 
@@ -5730,4 +5827,276 @@ body.dashboard-active .pagination-bar button.secondary:hover,
 body.dashboard-active .actions button.secondary:hover {
   background: #F4F1EA !important;
   color: var(--ft-text) !important;
+}
+
+/* Premium icon layer and resilient grids. */
+.dashboard-active .panel-head,
+.dashboard-active .chart-title,
+.dashboard-active .kpi-top,
+.dashboard-active .goal-item-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dashboard-active .panel-head > div,
+.dashboard-active .chart-title h3,
+.dashboard-active .kpi-top span:first-child,
+.dashboard-active .goal-item-head > div {
+  min-width: 0;
+}
+
+.dashboard-active .panel-head .icon-button {
+  margin-left: auto;
+}
+
+.panel-icon,
+.kpi-icon,
+.recent-icon,
+.goal-item-icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(31, 138, 95, .1);
+  color: var(--ft-emerald);
+}
+
+.panel-icon {
+  width: 44px;
+  height: 44px;
+}
+
+.panel-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.panel-icon.ai-icon,
+.dashboard-active .transaction-ai-helper .panel-icon {
+  background: rgba(108, 99, 255, .12);
+  color: var(--ft-ai);
+}
+
+.panel-icon.danger-icon {
+  background: rgba(192, 57, 43, .11);
+  color: var(--ft-critical);
+}
+
+.kpi-top {
+  justify-content: space-between;
+  width: 100%;
+}
+
+.kpi-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  background: color-mix(in srgb, currentColor 12%, white);
+}
+
+.kpi-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.dashboard-kpis .kpi-card {
+  display: grid;
+  align-content: space-between;
+}
+
+.recent-item {
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.recent-icon {
+  width: 42px;
+  height: 42px;
+  background: color-mix(in srgb, var(--item-color) 14%, white);
+  color: var(--item-color);
+}
+
+.recent-icon svg,
+.goal-item-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.recent-dot {
+  display: none;
+}
+
+.goal-item-head {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.goal-item-icon {
+  width: 44px;
+  height: 44px;
+}
+
+.chart-title {
+  margin-bottom: 14px;
+}
+
+.chart-title h3 {
+  margin: 0;
+}
+
+.dashboard-active .chart-panel {
+  padding: 24px;
+}
+
+.dashboard-active .field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+
+.dashboard-active .content-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+}
+
+.dashboard-active .category-layout {
+  grid-template-columns: minmax(min(100%, 360px), .75fr) minmax(min(100%, 480px), 1.25fr);
+}
+
+.dashboard-active .category-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+.dashboard-active .report-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+}
+
+.dashboard-active .dashboard-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)) !important;
+}
+
+.dashboard-active .finance-board {
+  grid-template-columns: minmax(0, 1.3fr) minmax(min(100%, 360px), .9fr) !important;
+}
+
+.dashboard-active .budget-board {
+  grid-column: 1 / -1;
+}
+
+.dashboard-active .transaction-toolbar {
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, .7fr));
+}
+
+@media (min-width: 1500px) {
+  .dashboard-active .workspace-content {
+    width: min(1440px, 100%);
+  }
+}
+
+@media (max-width: 1280px) {
+  .dashboard-active .dashboard-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .dashboard-active .sidebar {
+    padding: 28px 20px;
+  }
+
+  .dashboard-active .workspace-content {
+    padding-inline: 28px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .dashboard-active .finance-board,
+  .dashboard-active .category-layout,
+  .dashboard-active .content-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-active .dashboard-ai-strip {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .dashboard-active .dashboard-ai-strip .assistant-side,
+  .dashboard-active .dashboard-ai-strip > button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-active .workspace-header {
+    position: static;
+    display: grid;
+    gap: 14px;
+  }
+
+  .dashboard-active .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dashboard-active #quickExpenseBtn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .dashboard-active .welcome-row,
+  .dashboard-active .page-intro {
+    display: grid;
+    gap: 12px;
+  }
+
+  .dashboard-active .status-pill,
+  .dashboard-active .page-actions {
+    justify-self: start;
+  }
+
+  .dashboard-active .transaction-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-active .panel-head,
+  .dashboard-active .chart-title {
+    align-items: flex-start;
+  }
+}
+
+@supports not (color: color-mix(in srgb, white, black)) {
+  .kpi-icon,
+  .recent-icon,
+  .goal-item-icon {
+    background: #EEF7F2;
+  }
+}
+
+@media (max-width: 860px) {
+  .dashboard-active .sidebar-user {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 10px;
+  }
+
+  .dashboard-active .sidebar-user div:not(.user-avatar) {
+    display: block;
+  }
+
+  .dashboard-active .sidebar-user div:not(.user-avatar) span {
+    display: none;
+  }
+
+  .dashboard-active #quickExpenseBtn span {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-active .sidebar-user,
+  .dashboard-active .sidebar-logout {
+    min-height: 38px;
+    border-radius: 14px;
+  }
+
+  .dashboard-active .sidebar-user strong {
+    font-size: 13px;
+  }
 }
