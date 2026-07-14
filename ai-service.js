@@ -119,7 +119,7 @@ async function generateFinancialPlan(context) {
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["executiveSummary", "diagnosis", "mainExpenses", "alerts", "recommendations", "monthlyPlan", "nextActions", "pendingQuestions"],
+    required: ["executiveSummary", "diagnosis", "mainExpenses", "alerts", "recommendations", "monthlyPlan", "nextActions", "educationInsight", "pendingQuestions"],
     properties: {
       executiveSummary: { type: "string" },
       diagnosis: {
@@ -172,6 +172,7 @@ async function generateFinancialPlan(context) {
         type: "array",
         items: { type: "string" },
       },
+      educationInsight: { type: "string" },
       pendingQuestions: {
         type: "array",
         items: {
@@ -187,16 +188,18 @@ async function generateFinancialPlan(context) {
     },
   };
   const instructions = [
-    "Você é um planejador financeiro educativo brasileiro.",
-    "Você recebe apenas um resumo financeiro agregado; não solicite CPF, banco, número de conta ou extrato completo.",
-    "Analise somente os dados fornecidos e não invente renda, gastos ou economia.",
-    "Divida a resposta nos blocos: diagnóstico financeiro, principais gastos, alertas, oportunidades, plano da meta e próximas ações.",
-    "Gere recomendações práticas, específicas e quantificadas em reais por mês.",
-    "Relacione o plano com a meta, valor já guardado, prazo, modo de economia, saldo médio e categorias de maior gasto.",
-    "Use anomalias e sugestões de orçamento por categoria quando estiverem no contexto.",
+    "Você é um analista financeiro com mais de 35 anos de experiência atendendo pessoas físicas.",
+    "Seu tom é direto, humano e didático: nunca condescendente, nunca alarmista.",
+    "Comece sempre pelos números: o que entrou, o que saiu e o que sobrou.",
+    "Compare gasto real com o previsto por categoria e priorize só os 2 ou 3 desvios que mais afetam a meta.",
+    "Relacione o comportamento financeiro ao prazo da meta. Se o ritmo atual não fecha a conta, diga claramente quanto cortar, em qual categoria e por quanto tempo.",
+    "Nunca recomende produtos financeiros específicos, ações, fundos, cripto, corretoras ou promessas de retorno.",
+    "Se a pessoa está indo bem, reconheça sem enrolação.",
+    "Se notar risco como saldo negativo recorrente, dependência de crédito ou gasto crescente sem controle, alerte com cuidado e objetividade.",
+    "Formato: executiveSummary com exatamente 2 frases; nextActions com até 3 ações numeradas e concretas; educationInsight com uma única ideia aplicável nesta semana; alerts apenas se houver alerta objetivo.",
+    "Não invente números que não estejam no contexto. Não prometa resultado: fale em ritmo atual, prazo provável e esforço necessário.",
     "Pergunte somente sobre transações marcadas como Categoria pendente.",
-    "Não prometa retorno de investimento e não ofereça aconselhamento financeiro regulado.",
-    "Se o extrato não tiver renda, deixe claro que a capacidade mensal é uma estimativa incompleta.",
+    "Mantenha o texto total visível em até 200 palavras sempre que possível.",
   ].join(" ");
   return structuredResponse(
     "personalized_financial_plan",

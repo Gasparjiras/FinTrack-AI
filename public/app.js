@@ -558,7 +558,7 @@ function renderCategoryCards() {
     const percentage = recommended > 0 ? Math.round((spent / recommended) * 100) : 0;
     const width = Math.min(percentage, 100);
     const statusKey = suggestion ? budgetStatus(percentage) : spent > 0 ? "dentro" : "neutro";
-    const statusLabels = { dentro: "Dentro da sugestão", atencao: "Atenção", critico: "Crítico", neutro: "Sem gasto" };
+    const statusLabels = { dentro: "Dentro do ideal", atencao: "Atenção", critico: "Crítico", neutro: "Sem gasto" };
     const status = suggestion
       ? suggestion.reason
       : "A IA sugerirá um valor quando houver gastos nesta categoria.";
@@ -569,9 +569,9 @@ function renderCategoryCards() {
           <div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(status)}</p></div>
           <div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div>
         </div>
-        <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `Sugestão ${currency.format(recommended)}/mês` : "Aguardando dados"}</span></div>
+        <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `Recomendado ${currency.format(recommended)}/mês` : "Aguardando dados"}</span></div>
         <div class="progress-track"><span style="width:${width}%;background:${statusKey === "neutro" ? item.color : budgetStatusColor(statusKey)}"></span></div>
-        <div class="category-card-foot"><span class="category-status">${statusLabels[statusKey]}</span><small>${recommended > 0 ? `${percentage}% da sugestão mensal` : "Cadastre lançamentos para receber uma sugestão"}</small></div>
+        <div class="category-card-foot"><span class="category-status">${statusLabels[statusKey]}</span><small>${recommended > 0 ? `${percentage}% do valor recomendado` : "Cadastre lançamentos para receber uma recomendação"}</small></div>
       </article>
     `;
   }).join("");
@@ -644,8 +644,8 @@ function renderDashboardBudgets() {
     const overAmount = Math.max((item.currentMonthly || 0) - (item.suggestedMonthly || 0), 0);
     const status = budgetStatus(percentage);
     const detail = status === "dentro"
-      ? `Dentro da sugestão mensal de ${currency.format(item.suggestedMonthly)}`
-      : `${currency.format(overAmount)} acima da sugestão mensal de ${currency.format(item.suggestedMonthly)}`;
+      ? `Dentro do valor recomendado de ${currency.format(item.suggestedMonthly)}`
+      : `${currency.format(overAmount)} acima do valor recomendado de ${currency.format(item.suggestedMonthly)}`;
     const fill = Math.min(Math.max(percentage / 2, 2), 100);
     const statusText = status === "dentro" ? "dentro do previsto" : status === "atencao" ? "atenção" : "crítico";
     const alert = status === "critico"
@@ -692,7 +692,7 @@ function updateBudgetStatus() {
   statusElement.textContent = attention.length ? `${attention.length} para revisar` : tracked.length ? `${tracked.length} analisadas` : "Aguardando dados";
   detailElement.textContent = attention.length
     ? attention.map((item) => item.category).join(", ")
-    : tracked.length ? "Dentro da sugestão" : "Cadastre lançamentos";
+    : tracked.length ? "Dentro do ideal" : "Cadastre lançamentos";
 }
 
 function statusColor(item, fallback) {
@@ -1007,8 +1007,8 @@ function renderAIReport() {
     ...(ai?.alerts || []),
     ...analysis.budgetAlerts.map((item) => ({
       severity: "atencao",
-      title: `${item.category} acima da sugestão`,
-      message: `A IA sugere reduzir aproximadamente ${currency.format(item.exceededBy)} por mês nessa categoria.`,
+      title: `${item.category} acima do ideal`,
+      message: `Reduzir cerca de ${currency.format(item.exceededBy)} por mês ajuda a voltar ao patamar planejado.`,
     })),
     ...analysis.anomalies.map((item) => ({
       severity: item.severity,
@@ -1023,16 +1023,17 @@ function renderAIReport() {
   aiResult.innerHTML = `
     <article class="consultant-card">
       <div class="consultant-avatar"><i data-lucide="sparkles"></i></div>
-      <div><span class="consultant-label">${escapeHtml(provider)}</span><h3>Diagnostico financeiro</h3><p>${escapeHtml(summary)}</p></div>
+      <div><span class="consultant-label">${escapeHtml(provider)}</span><h3>Diagnóstico financeiro</h3><p>${escapeHtml(summary)}</p></div>
     </article>
     ${renderClassificationSummaryBlock()}
     ${renderMonthlyComparisonBlock()}
-    ${renderTextBlock("Diagnostico financeiro", blocks.diagnosis, "scan-search")}
+    ${renderTextBlock("Diagnóstico financeiro", blocks.diagnosis, "scan-search")}
     ${renderTextBlock("Principais gastos", blocks.mainExpenses, "receipt-text")}
     ${alerts.length ? `<div class="ai-section"><h3>Alertas</h3><div class="ai-alerts">${alerts.map((item) => `<div class="ai-alert ${escapeHtml(item.severity)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}</div></div>` : renderTextBlock("Alertas", analysis.aiBlocks?.alerts || [], "triangle-alert")}
     <div class="ai-section"><h3>Oportunidades de economia</h3><div class="recommendations">${recommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}</div></div>
     ${renderBudgetSuggestionBlock()}
     ${renderGoalPlanBlock(ai)}
+    ${renderEducationInsightBlock(ai)}
     ${renderTextBlock("Próximas ações recomendadas", blocks.nextActions, "list-checks")}
   `;
   if (analysis.aiStatus.warning) toast(analysis.aiStatus.warning);
@@ -1077,6 +1078,17 @@ function renderMonthlyComparisonBlock() {
   `;
 }
 
+function renderEducationInsightBlock(ai) {
+  const insight = ai?.educationInsight || analysis?.aiBlocks?.educationInsight;
+  if (!insight) return "";
+  return `
+    <div class="ai-section education-insight-block">
+      <h3>Educação financeira da semana</h3>
+      <div class="insight-line"><i data-lucide="graduation-cap"></i><span>${escapeHtml(insight)}</span></div>
+    </div>
+  `;
+}
+
 function renderClassificationSummaryBlock() {
   const summary = analysis.classificationSummary || {};
   const sources = Object.entries(summary.sources || {});
@@ -1084,7 +1096,7 @@ function renderClassificationSummaryBlock() {
   if (!sources.length && !confidence.length) return "";
   return `
     <div class="ai-section">
-      <h3>Classificacao automatica</h3>
+      <h3>Classificação automática</h3>
       <div class="automation-grid">
         ${sources.map(([source, count]) => `<div><span>${escapeHtml(sourceLabel(source))}</span><strong>${count}</strong></div>`).join("")}
         ${confidence.map(([item, count]) => `<div><span>${escapeHtml(confidenceLabel(item))}</span><strong>${count}</strong></div>`).join("")}
@@ -1382,7 +1394,7 @@ function renderBudgetChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 16 },
+        { label: "Recomendado", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 16 },
         { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 999, borderSkipped: false, maxBarThickness: 16 },
       ],
     },
@@ -1393,7 +1405,7 @@ function renderBudgetChart() {
 function renderBudgetComparisonChart() {
   const items = (analysis?.categoryBudgetSuggestions || []).filter((item) => item.suggestedMonthly > 0).slice(0, 8);
   if (!items.length) {
-    setChartEmpty("budgetComparison", "budgetComparisonChart", "A IA mostrará sugestão x gasto real após você importar lançamentos.");
+    setChartEmpty("budgetComparison", "budgetComparisonChart", "A IA mostrará valor recomendado x gasto real após você importar lançamentos.");
     return;
   }
   setChartEmpty("budgetComparison", "budgetComparisonChart", "");
@@ -1402,7 +1414,7 @@ function renderBudgetComparisonChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
+        { label: "Recomendado", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
         { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
       ],
     },

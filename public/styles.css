@@ -7162,6 +7162,40 @@ table,
   background: rgba(192, 57, 43, .045);
 }
 
+.dashboard-active .ai-alert,
+.app-view[data-page="ia"] .ai-alert {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  border: 1px solid rgba(14, 31, 27, .1);
+  background: #FFFDF8;
+}
+
+.dashboard-active .ai-alert strong,
+.dashboard-active .ai-alert span,
+.app-view[data-page="ia"] .ai-alert strong,
+.app-view[data-page="ia"] .ai-alert span {
+  display: block;
+  line-height: 1.35;
+}
+
+.dashboard-active .ai-alert strong,
+.app-view[data-page="ia"] .ai-alert strong {
+  color: var(--ft-text);
+  font-weight: 850;
+}
+
+.dashboard-active .ai-alert span,
+.app-view[data-page="ia"] .ai-alert span {
+  color: var(--ft-muted);
+  font-weight: 650;
+}
+
+.education-insight-block .insight-line {
+  border-color: rgba(31, 138, 95, .18);
+  background: rgba(31, 138, 95, .055);
+}
+
 @media (max-width: 900px) {
   .goal-summary {
     grid-template-columns: 1fr 1fr !important;

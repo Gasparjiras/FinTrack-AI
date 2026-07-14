@@ -1373,15 +1373,15 @@ function detectAnomalies(transactions, categories, categoryBudgets, months) {
       anomalies.push({
         type: "sugestao",
         severity: "critico",
-        title: `${item.name} acima da sugestão`,
-        message: `Você gastou ${money(item.spent - item.monthly_limit)} acima da sugestão mensal.`,
+        title: `${item.name} acima do ideal`,
+        message: `Você gastou ${money(item.spent - item.monthly_limit)} acima do valor recomendado para esta categoria.`,
       });
     } else if (item.spent >= item.monthly_limit * 0.7) {
       anomalies.push({
         type: "sugestao",
         severity: "atencao",
-        title: `${item.name} perto da sugestão`,
-        message: `Você já usou ${item.percentage}% da sugestão mensal desta categoria.`,
+        title: `${item.name} perto do ideal`,
+        message: `Você já usou ${item.percentage}% do valor recomendado para esta categoria.`,
       });
     }
   }
@@ -1582,7 +1582,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
       exceededBy: item.difference,
     }))
     .sort((a, b) => b.exceededBy - a.exceededBy);
-  if (budgetAlerts.length) insights.push(`A IA sugere reduzir gastos em ${budgetAlerts.map((item) => item.category).join(", ")}.`);
+  if (budgetAlerts.length) insights.push(`Priorize ajustes em ${budgetAlerts.map((item) => item.category).join(", ")} para liberar espaço no orçamento.`);
   if (goalPlan) {
     const objectiveLabels = {
       reserva: "montar uma reserva de emergência",
@@ -1602,6 +1602,9 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
       insights.unshift(`As economias sugeridas somam cerca de ${money(potentialMonthlySavings)} por mês e podem cobrir ${coverage}% do ajuste necessário para sua meta.`);
     }
   }
+  const educationInsight = categories[0]
+    ? `Nesta semana, acompanhe ${categories[0].category} antes de gastar: quando a maior categoria é medida no momento da decisão, o corte deixa de depender de memória no fim do mês.`
+    : "Nesta semana, registre cada gasto no dia em que ele acontecer. Sem registro confiável, qualquer plano vira estimativa.";
   const aiBlocks = {
     diagnosis: [
       monthlyComparison?.summary,
@@ -1610,10 +1613,11 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     ].filter(Boolean),
     mainExpenses: largestExpenses.map((item) => `${item.description}: ${money(item.value)} em ${item.category}.`),
     alerts: [
-      ...budgetAlerts.map((item) => `A IA sugere reduzir ${item.category} em cerca de ${money(item.exceededBy)} por mês.`),
+      ...budgetAlerts.map((item) => `Ajuste recomendado: reduza ${item.category} em cerca de ${money(item.exceededBy)} por mês para voltar ao patamar planejado.`),
       ...anomalies.map((item) => item.message),
     ].slice(0, 6),
     savingsOpportunities: recommendations.map((item) => item.message),
+    educationInsight,
     goalPlan: goalPlan
       ? [
           `Para ${goalPlan.goal_name}, meta de ${money(goalPlan.target_value)}, você já guardou ${money(goalPlan.saved_amount)} e ainda faltam ${money(goalPlan.remainingAmount)}.`,
@@ -1624,7 +1628,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     nextActions: [
       goalPlan ? `Separe ${money(goalPlan.monthlyTarget)} para a meta assim que a renda entrar.` : "Cadastre uma meta com valor, prazo e valor já guardado.",
       recommendations[0] ? recommendations[0].message : "Cadastre mais gastos para encontrar oportunidades de economia.",
-      categoryBudgetSuggestions[0] ? `Use a sugestão de orçamento para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
+      categoryBudgetSuggestions[0] ? `Use o valor recomendado para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
     ],
   };
   return {
@@ -1709,6 +1713,7 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       savingsOpportunities: localAnalysis.aiBlocks.savingsOpportunities,
       goalPlan: localAnalysis.aiBlocks.goalPlan,
       nextActions: localAnalysis.aiBlocks.nextActions,
+      educationInsight: localAnalysis.aiBlocks.educationInsight,
     },
   };
   const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, localAnalysis.goals || goal, localAnalysis.selectedMonth);
