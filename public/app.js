@@ -39,6 +39,16 @@ const confirmPasswordInput = document.querySelector("#confirmPasswordInput");
 const passwordBar = document.querySelector("#passwordBar");
 const registerButton = document.querySelector("#registerButton");
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const themeColors = {
+  ink: "#0E1F1B",
+  paper: "#F7F5F0",
+  emerald: "#1F8A5F",
+  ai: "#6C63FF",
+  attention: "#E08A3C",
+  critical: "#C0392B",
+  muted: "#D8D6CF",
+};
+const categoryPalette = ["#1F8A5F", "#E08A3C", "#B66A55", "#5F7486", "#2F5D50"];
 
 let transactions = [];
 let categories = [];
@@ -497,8 +507,8 @@ function renderCategoryCards() {
     const spent = Number(item.spent || 0);
     const percentage = recommended > 0 ? Math.round((spent / recommended) * 100) : 0;
     const width = Math.min(percentage, 100);
-    const statusKey = suggestion?.status === "reduzir" ? "acima" : spent > 0 ? "dentro" : "neutro";
-    const statusLabels = { dentro: "Dentro da sugestão", acima: "Reduzir", neutro: "Sem gasto" };
+    const statusKey = suggestion ? budgetStatus(percentage) : spent > 0 ? "dentro" : "neutro";
+    const statusLabels = { dentro: "Dentro da sugestão", atencao: "Atenção", critico: "Crítico", neutro: "Sem gasto" };
     const status = suggestion
       ? suggestion.reason
       : "A IA sugerirá um valor quando houver gastos nesta categoria.";
@@ -506,7 +516,7 @@ function renderCategoryCards() {
       <article class="category-card status-${statusKey}">
         <div class="category-card-head"><span class="category-color" style="background:${item.color}"></span><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(status)}</p></div><span class="category-status">${statusLabels[statusKey]}</span><div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div></div>
         <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `sugestão ${currency.format(recommended)}/mês` : "aguardando dados"}</span></div>
-        <div class="progress-track"><span style="width:${width}%;background:${statusKey === "acima" ? "#c2463f" : item.color}"></span></div>
+        <div class="progress-track"><span style="width:${width}%;background:${statusKey === "neutro" ? item.color : budgetStatusColor(statusKey)}"></span></div>
         <small>${recommended > 0 ? `${percentage}% da sugestão mensal` : "Cadastre lançamentos para receber uma sugestão"}</small>
       </article>
     `;
@@ -578,25 +588,45 @@ function renderDashboardBudgets() {
   container.innerHTML = items.map((item) => {
     const percentage = item.suggestedMonthly > 0 ? Math.round((item.currentMonthly / item.suggestedMonthly) * 100) : 0;
     const overAmount = Math.max((item.currentMonthly || 0) - (item.suggestedMonthly || 0), 0);
-    const category = categories.find((entry) => entry.name === item.category);
-    const status = item.status === "reduzir" ? "acima" : "dentro";
-    const detail = status === "acima"
-      ? `${currency.format(overAmount)} acima da sugestão mensal de ${currency.format(item.suggestedMonthly)}`
-      : `Dentro da sugestão mensal de ${currency.format(item.suggestedMonthly)}`;
-    const fill = Math.min(percentage, 100);
-    const overrun = status === "acima" ? Math.min(Math.max(percentage - 100, 8), 34) : 0;
-    const alert = status === "acima"
-      ? `<span class="budget-alert"><i data-lucide="triangle-alert"></i>${percentage}% da sugestão usada</span>`
-      : "";
+    const status = budgetStatus(percentage);
+    const detail = status === "dentro"
+      ? `Dentro da sugestão mensal de ${currency.format(item.suggestedMonthly)}`
+      : `${currency.format(overAmount)} acima da sugestão mensal de ${currency.format(item.suggestedMonthly)}`;
+    const fill = Math.min(Math.max(percentage / 2, 2), 100);
+    const statusText = status === "dentro" ? "dentro do previsto" : status === "atencao" ? "atenção" : "crítico";
+    const alert = status === "critico"
+      ? `<span class="budget-alert"><i data-lucide="triangle-alert"></i>Crítico</span>`
+      : status === "atencao"
+        ? `<span class="budget-alert"><i data-lucide="circle-alert"></i>Atenção</span>`
+        : "";
     return `
       <div class="budget-row status-${status}">
-        <div class="budget-label"><strong>${escapeHtml(item.category)}</strong>${alert}<b class="${status === "acima" ? "value-negative" : ""}">${percentage}%</b></div>
-        <div class="progress-track budget-track" style="--budget-width:${fill}%;--budget-overrun:${overrun}%;--budget-color:${status === "acima" ? "#c2463f" : category?.color || "#146b59"}"><span></span>${overrun ? "<i></i>" : ""}</div>
-        <small>${escapeHtml(detail)}</small>
+        <div class="budget-label"><strong>${escapeHtml(item.category)}</strong>${alert}<b>${percentage}%</b></div>
+        <div class="budget-track-dual" style="--suggested-width:50%;--actual-width:${fill}%;--status-color:${budgetStatusColor(status)}"><span class="suggested-bar"></span><span class="actual-bar"></span></div>
+        <small><b>${statusText}</b> - ${escapeHtml(detail)}</small>
     </div>
     `;
-  }).join("") || `<div class="empty-compact">Cadastre ou importe lançamentos para a IA sugerir gastos por categoria.</div>`;
+  }).join("") || `<div class="empty-compact empty-action">Importe lançamentos para a IA sugerir quanto gastar em cada categoria.</div>`;
   refreshIcons();
+}
+
+function budgetStatus(percentage) {
+  if (percentage > 120) return "critico";
+  if (percentage > 100) return "atencao";
+  return "dentro";
+}
+
+function budgetStatusColor(status) {
+  if (status === "critico") return themeColors.critical;
+  if (status === "atencao") return themeColors.attention;
+  return themeColors.emerald;
+}
+
+function budgetStatusFromSuggestion(item) {
+  const percentage = Number(item.suggestedMonthly || 0) > 0
+    ? Math.round((Number(item.currentMonthly || 0) / Number(item.suggestedMonthly || 1)) * 100)
+    : 0;
+  return budgetStatus(percentage);
 }
 
 function updateBudgetStatus() {
@@ -604,10 +634,10 @@ function updateBudgetStatus() {
   const detailElement = document.querySelector("#budgetStatusDetail");
   if (!statusElement || !detailElement) return;
   const tracked = analysis?.categoryBudgetSuggestions || [];
-  const over = tracked.filter((item) => item.status === "reduzir");
-  statusElement.textContent = over.length ? `${over.length} para reduzir` : tracked.length ? `${tracked.length} analisadas` : "Aguardando dados";
-  detailElement.textContent = over.length
-    ? over.map((item) => item.category).join(", ")
+  const attention = tracked.filter((item) => budgetStatusFromSuggestion(item) !== "dentro");
+  statusElement.textContent = attention.length ? `${attention.length} para revisar` : tracked.length ? `${tracked.length} analisadas` : "Aguardando dados";
+  detailElement.textContent = attention.length
+    ? attention.map((item) => item.category).join(", ")
     : tracked.length ? "Dentro da sugestão" : "Cadastre lançamentos";
 }
 
@@ -839,6 +869,7 @@ function updateSummaryKpis() {
   document.querySelector("#aiExpenses").textContent = currency.format(analysis.totalExpenses);
   document.querySelector("#aiBalance").textContent = currency.format(analysis.balance);
   document.querySelector("#aiTopCategory").textContent = analysis.categories[0]?.category || "Sem dados";
+  document.querySelector(".balance-card")?.classList.toggle("is-critical", Number(analysis.balance || 0) < 0);
   renderDashboardGoalCard();
   renderAssistantHub();
 }
@@ -1099,7 +1130,7 @@ function renderFlowChart(key, canvasId) {
   setChartEmpty(key, canvasId, "");
   createChart(key, canvasId, {
     type: "bar",
-    data: { labels: ["Entradas", "Saídas", "Saldo"], datasets: [{ data: [analysis.totalIncome, analysis.totalExpenses, Math.max(analysis.balance, 0)], backgroundColor: ["#146b59", "#d95d39", "#285e8e"], borderRadius: 7 }] },
+    data: { labels: ["Entradas", "Saídas", "Saldo"], datasets: [{ data: [analysis.totalIncome, analysis.totalExpenses, Math.max(analysis.balance, 0)], backgroundColor: [themeColors.emerald, themeColors.critical, themeColors.ai], borderRadius: 7 }] },
     options: chartOptions(),
   });
 }
@@ -1131,8 +1162,8 @@ function renderMonthlyChart(key, canvasId) {
     data: {
       labels: items.map((item) => item.month),
       datasets: [
-        { label: "Entradas", data: items.map((item) => item.income), borderColor: "#3b82f6", backgroundColor: dark ? "rgba(59,130,246,.08)" : "rgba(59,130,246,.12)", fill: true, tension: .32 },
-        { label: "Saídas", data: items.map((item) => item.expenses), borderColor: "#ef4444", backgroundColor: dark ? "rgba(239,68,68,.06)" : "rgba(239,68,68,.08)", fill: true, tension: .32 },
+        { label: "Entradas", data: items.map((item) => item.income), borderColor: themeColors.emerald, backgroundColor: "rgba(31,138,95,.08)", fill: true, tension: .32 },
+        { label: "Saídas", data: items.map((item) => item.expenses), borderColor: themeColors.critical, backgroundColor: "rgba(192,57,43,.06)", fill: true, tension: .32 },
       ],
     },
     options: { ...chartOptions(dark ? "dark" : "light"), plugins: { legend: { position: "top", align: "start", labels: { color: dark ? "#d8d7d2" : "#17201d", usePointStyle: true, boxWidth: 8 } } } },
@@ -1150,7 +1181,7 @@ function renderGoalChart(key, canvasId) {
     type: "doughnut",
     data: {
       labels: ["Concluido", "Falta"],
-      datasets: [{ data: [progress, Math.max(100 - progress, 0)], backgroundColor: ["#146b59", "#dfe8e4"], borderWidth: 0 }],
+      datasets: [{ data: [progress, Math.max(100 - progress, 0)], backgroundColor: [themeColors.emerald, themeColors.muted], borderWidth: 0 }],
     },
     options: { responsive: true, maintainAspectRatio: false, cutout: "72%", plugins: { legend: { position: "bottom" } } },
   });
@@ -1168,8 +1199,8 @@ function renderBudgetChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#c8d4df", borderRadius: 5 },
-        { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => item.status === "reduzir" ? "#c2463f" : "#146b59"), borderRadius: 5 },
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: themeColors.muted, borderRadius: 5 },
+        { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 5 },
       ],
     },
     options: { ...chartOptions(), indexAxis: "y", plugins: { legend: { position: "top" } } },
@@ -1188,8 +1219,8 @@ function renderBudgetComparisonChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#d8e2dd", borderRadius: 6 },
-        { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => item.status === "reduzir" ? "#c2463f" : "#146b59"), borderRadius: 6 },
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: themeColors.muted, borderRadius: 6 },
+        { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 6 },
       ],
     },
     options: { ...chartOptions(), plugins: { legend: { display: true, position: "top" } } },
@@ -1207,7 +1238,7 @@ function renderSavingsChart() {
     type: "bar",
     data: {
       labels: items.map((item) => item.category),
-      datasets: [{ label: "Economia mensal", data: items.map((item) => item.potentialMonthlySavings), backgroundColor: "#146b59", borderRadius: 6 }],
+      datasets: [{ label: "Economia mensal", data: items.map((item) => item.potentialMonthlySavings), backgroundColor: themeColors.emerald, borderRadius: 6 }],
     },
     options: chartOptions(),
   });
@@ -1257,11 +1288,14 @@ function setChartEmpty(key, canvasId, text) {
 }
 
 function isDarkDashboardChart(canvasId) {
-  return Boolean(document.querySelector(`#${canvasId}`)?.closest(".finance-board"));
+  return false;
 }
 
 function categoryColor(name) {
-  return categories.find((item) => item.name === name)?.color || "#6b7280";
+  const normalized = String(name || "Outros");
+  let hash = 0;
+  for (const char of normalized) hash = ((hash << 5) - hash) + char.charCodeAt(0);
+  return categoryPalette[Math.abs(hash) % categoryPalette.length];
 }
 
 function typeLabel(value) {
