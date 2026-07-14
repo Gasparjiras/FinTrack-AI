@@ -391,10 +391,16 @@ function parseCsvLine(line, delimiter) {
 }
 
 function importTransactionsFromCSV(buffer) {
-  const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+  let text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+  if (text.includes("�")) text = buffer.toString("latin1").replace(/^\uFEFF/, "");
   const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
   if (lines.length < 2) return { columns: [], rows: [] };
-  const delimiter = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
+  const delimiterCounts = [
+    [";", (lines[0].match(/;/g) || []).length],
+    [",", (lines[0].match(/,/g) || []).length],
+    ["\t", (lines[0].match(/\t/g) || []).length],
+  ].sort((a, b) => b[1] - a[1]);
+  const delimiter = delimiterCounts[0][1] > 0 ? delimiterCounts[0][0] : ",";
   const columns = parseCsvLine(lines[0], delimiter).map((column, index) => String(column || `Coluna ${index + 1}`).trim());
   const rows = lines.slice(1, 501).map((line) => {
     const values = parseCsvLine(line, delimiter);
@@ -442,17 +448,36 @@ function canonicalCategory(value) {
   return aliases[normalizeColumnName(text)] || text;
 }
 
-function suggestImportMapping(columns) {
+function suggestImportMapping(columns, rows = []) {
   const normalized = columns.map((column) => ({ column, normalized: normalizeColumnName(column) }));
   const pick = (patterns) => normalized.find((item) => patterns.some((pattern) => pattern.test(item.normalized)))?.column || "";
+  const samples = rows.slice(0, 25);
+  const contentScore = (column, predicate) => samples.reduce((score, row) => score + (predicate(row[column]) ? 1 : 0), 0);
+  const pickByContent = (predicate, exclude = []) => columns
+    .filter((column) => !exclude.includes(column))
+    .map((column) => ({ column, score: contentScore(column, predicate) }))
+    .sort((a, b) => b.score - a.score)[0];
+  const dateByName = pick([/\bdata\b/, /\bdate\b/, /\bdia\b/]);
+  const descriptionByName = pick([/descricao/, /descrição/, /historico/, /histórico/, /hist rico/, /lancamento/, /lançamento/, /estabelecimento/, /merchant/, /description/, /detalhe/]);
+  const valueByName = pick([/\bvalor\b/, /\bvalue\b/, /\bamount\b/, /\bpreco\b/, /\bpreço\b/, /movimentacao/, /movimentação/]);
+  const debitByName = pick([/debito/, /débito/, /d bito/, /\bsaida\b/, /\bsaída\b/, /despesa/, /pagamento/]);
+  const creditByName = pick([/credito/, /crédito/, /cr dito/, /\bentrada\b/, /receita/, /deposito/, /depósito/]);
+  const dateByContent = pickByContent((value) => Boolean(toIsoDate(value)));
+  const valueByContent = pickByContent((value) => parseMoney(value) !== null, [dateByName || dateByContent?.column].filter(Boolean));
+  const descriptionByContent = pickByContent((value) => {
+    const text = String(value || "").trim();
+    return text.length >= 3 && !toIsoDate(text) && parseMoney(text) === null;
+  }, [dateByName || dateByContent?.column, valueByName || valueByContent?.column].filter(Boolean));
   return {
-    date: pick([/\bdata\b/, /\bdate\b/, /\bdia\b/]),
-    description: pick([/descricao/, /historico/, /lancamento/, /estabelecimento/, /merchant/, /description/]),
-    value: pick([/\bvalor\b/, /\bvalue\b/, /\bamount\b/, /\bpreco\b/]),
+    date: dateByName || (dateByContent?.score > 0 ? dateByContent.column : ""),
+    description: descriptionByName || (descriptionByContent?.score > 0 ? descriptionByContent.column : ""),
+    value: valueByName || (!debitByName && !creditByName && valueByContent?.score > 0 ? valueByContent.column : ""),
+    debitValue: debitByName,
+    creditValue: creditByName,
     category: pick([/categoria/, /category/]),
-    type: pick([/\btipo\b/, /\bdirecao\b/, /entrada saida/, /credito debito/]),
-    paymentMethod: pick([/forma/, /pagamento/, /payment/, /metodo/]),
-    source: pick([/banco/, /origem/, /source/, /instituicao/]),
+    type: pick([/\btipo\b/, /\bdirecao\b/, /entrada saida/, /credito debito/, /cr[eé]dito d[eé]bito/]),
+    paymentMethod: pick([/forma/, /pagamento/, /payment/, /metodo/, /m[eé]todo/]),
+    source: pick([/banco/, /origem/, /source/, /instituicao/, /instituição/]),
   };
 }
 
@@ -466,6 +491,13 @@ function rowToImportCandidate(row, mapping, learnedRules = []) {
   const date = toIsoDate(valueFromMappedRow(row, mapping, "date"));
   const rawValue = valueFromMappedRow(row, mapping, "value");
   let value = parseMoney(rawValue);
+  const debitValue = parseMoney(valueFromMappedRow(row, mapping, "debitValue"));
+  const creditValue = parseMoney(valueFromMappedRow(row, mapping, "creditValue"));
+  if ((value === null || value === 0) && (debitValue !== null || creditValue !== null)) {
+    const debit = Math.abs(Number(debitValue || 0));
+    const credit = Math.abs(Number(creditValue || 0));
+    value = credit > 0 && debit === 0 ? credit : debit > 0 && credit === 0 ? -debit : credit - debit;
+  }
   const rawType = normalizeColumnName(valueFromMappedRow(row, mapping, "type"));
   if (value !== null) {
     if (/saida|debito|despesa|pagamento|d\b/.test(rawType)) value = -Math.abs(value);
@@ -497,7 +529,7 @@ function detectDuplicateTransactions(userId, candidates) {
   });
 }
 
-function buildImportPreview(userId, rows, mapping) {
+function buildImportCandidateList(userId, rows, mapping) {
   const learnedRules = loadCategoryRules(userId);
   const errors = [];
   const candidates = [];
@@ -513,10 +545,20 @@ function buildImportPreview(userId, rows, mapping) {
     }
     candidates.push(candidate);
   });
+  return { candidates, errors, learnedRules };
+}
+
+function finishImportPreview(userId, candidates, errors = [], ai = {}) {
   const withDuplicates = detectDuplicateTransactions(userId, candidates);
   const importable = withDuplicates.filter((item) => !item.duplicate);
   return {
     candidates: withDuplicates,
+    ai: {
+      source: ai.source || "local",
+      model: ai.model || null,
+      cached: Boolean(ai.cached),
+      warning: ai.warning || null,
+    },
     summary: {
       found: withDuplicates.length,
       importable: importable.length,
@@ -527,6 +569,20 @@ function buildImportPreview(userId, rows, mapping) {
     },
     errors: errors.slice(0, 20),
   };
+}
+
+function buildImportPreview(userId, rows, mapping) {
+  const { candidates, errors } = buildImportCandidateList(userId, rows, mapping);
+  return finishImportPreview(userId, candidates, errors);
+}
+
+async function buildSmartImportPreview(userId, rows, mapping, options = {}) {
+  const { candidates, errors, learnedRules } = buildImportCandidateList(userId, rows, mapping);
+  if (!options.useAI || candidates.length === 0) {
+    return finishImportPreview(userId, candidates, errors, { source: "local" });
+  }
+  const aiResult = await enrichCandidatesWithOpenAI(userId, candidates, learnedRules);
+  return finishImportPreview(userId, aiResult.candidates, errors, aiResult);
 }
 
 function audit(userId, action, details, req) {
@@ -625,13 +681,22 @@ function consumeAIRequest(userId) {
 
 function toIsoDate(value, fallbackYear = new Date().getFullYear()) {
   const text = String(value || "").trim();
-  const br = text.match(/^(\d{2})[\/.-](\d{2})(?:[\/.-](\d{2,4}))?$/);
+  if (!text) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const excelSerial = Number(text);
+  if (/^\d{5}(?:\.\d+)?$/.test(text) && Number.isFinite(excelSerial)) {
+    const date = XLSX.SSF.parse_date_code(excelSerial);
+    if (date) return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
+  }
+  const br = text.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?$/);
   if (br) {
     const year = !br[3] ? String(fallbackYear) : br[3].length === 2 ? `20${br[3]}` : br[3];
-    return `${year}-${br[2]}-${br[1]}`;
+    return `${year}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
   }
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return text;
+  const isoSlash = text.match(/^(\d{4})[\/.](\d{1,2})[\/.](\d{1,2})$/);
+  if (isoSlash) return `${isoSlash[1]}-${isoSlash[2].padStart(2, "0")}-${isoSlash[3].padStart(2, "0")}`;
   const months = {
     jan: "01", fev: "02", mar: "03", abr: "04", mai: "05", jun: "06",
     jul: "07", ago: "08", set: "09", out: "10", nov: "11", dez: "12",
@@ -645,13 +710,17 @@ function toIsoDate(value, fallbackYear = new Date().getFullYear()) {
 }
 
 function parseMoney(value) {
-  const raw = String(value || "").replace(/[R$\s]/g, "");
-  const negative = raw.includes("-") || (raw.includes("(") && raw.includes(")"));
-  const clean = raw.replace(/[()]/g, "").replace("-", "");
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const compact = raw.replace(/[R$\s]/g, "");
+  const debitHint = /(?:^|[^A-Za-z])D$/i.test(compact) || /debito|d[eé]bito|saida|saída|despesa/i.test(raw);
+  const creditHint = /(?:^|[^A-Za-z])C$/i.test(compact) || /credito|cr[eé]dito|entrada|receita/i.test(raw);
+  const negative = compact.includes("-") || debitHint || (compact.includes("(") && compact.includes(")"));
+  const clean = compact.replace(/[()]/g, "").replace("-", "").replace(/[CD]$/i, "");
   const normalized = clean.includes(",") ? clean.replace(/\./g, "").replace(",", ".") : clean;
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed)) return null;
-  return negative ? -Math.abs(parsed) : parsed;
+  return negative && !creditHint ? -Math.abs(parsed) : parsed;
 }
 
 function normalizeDescription(value) {
@@ -1861,8 +1930,8 @@ async function handleApi(req, res) {
         await parser.destroy();
         const learnedRules = loadCategoryRules(user.id);
         const candidates = parseTransactionsFromText(result.text, learnedRules);
-        const withDuplicates = detectDuplicateTransactions(user.id, candidates);
-        const importable = withDuplicates.filter((item) => !item.duplicate);
+        const aiResult = await enrichCandidatesWithOpenAI(user.id, candidates, learnedRules);
+        const preview = finishImportPreview(user.id, aiResult.candidates, [], aiResult);
         audit(user.id, "PDF_STATEMENT_ANALYZED", { candidates: candidates.length }, req);
         return send(res, 200, {
           kind: "pdf",
@@ -1870,26 +1939,19 @@ async function handleApi(req, res) {
           columns: [],
           rows: [],
           mapping: {},
-          candidates: withDuplicates,
-          summary: {
-            found: withDuplicates.length,
-            importable: importable.length,
-            income: importable.filter((item) => item.value > 0).reduce((sum, item) => sum + item.value, 0),
-            expenses: importable.filter((item) => item.value < 0).reduce((sum, item) => sum + Math.abs(item.value), 0),
-            errors: 0,
-            duplicates: withDuplicates.filter((item) => item.duplicate).length,
-          },
-          notice: "PDF processado em memoria e descartado. Revise a previa antes de confirmar.",
+          ...preview,
+          notice: "PDF processado em memoria e descartado. A IA/regras locais revisaram as categorias; confirme antes de importar.",
         });
       }
       let parsed;
       if (extension === ".csv") parsed = importTransactionsFromCSV(uploaded.buffer);
       else if ([".xlsx", ".xls"].includes(extension)) parsed = importTransactionsFromExcel(uploaded.buffer);
       else return send(res, 400, { error: "Formato não suportado. Envie CSV, XLSX, XLS ou PDF." });
-      const mapping = suggestImportMapping(parsed.columns);
-      const preview = mapping.date && mapping.description && mapping.value
-        ? buildImportPreview(user.id, parsed.rows, mapping)
-        : { candidates: [], summary: { found: 0, importable: 0, income: 0, expenses: 0, errors: 0, duplicates: 0 }, errors: [] };
+      const mapping = suggestImportMapping(parsed.columns, parsed.rows);
+      const hasValueMapping = mapping.value || mapping.debitValue || mapping.creditValue;
+      const preview = mapping.date && mapping.description && hasValueMapping
+        ? await buildSmartImportPreview(user.id, parsed.rows, mapping, { useAI: true })
+        : { candidates: [], ai: { source: "local", model: null, cached: false, warning: null }, summary: { rows: parsed.rows.length, found: 0, importable: 0, income: 0, expenses: 0, errors: 0, duplicates: 0 }, errors: [] };
       audit(user.id, "STATEMENT_FILE_ANALYZED", { filename: uploaded.filename, rows: parsed.rows.length }, req);
       return send(res, 200, {
         kind: extension === ".csv" ? "csv" : "excel",
@@ -1898,7 +1960,9 @@ async function handleApi(req, res) {
         rows: parsed.rows,
         mapping,
         ...preview,
-        notice: "Confira o mapeamento das colunas e revise a previa antes de confirmar.",
+        notice: preview.candidates.length
+          ? "Arquivo lido. A IA/regras locais sugeriram tipo e categoria; revise a previa antes de confirmar."
+          : "Arquivo lido, mas falta confirmar o mapeamento das colunas para gerar os lançamentos.",
       });
     }
 
@@ -1909,10 +1973,10 @@ async function handleApi(req, res) {
       const body = await readJson(req);
       const rows = Array.isArray(body.rows) ? body.rows : [];
       const mapping = body.mapping || {};
-      if (!mapping.date || !mapping.description || !mapping.value) {
-        return send(res, 400, { error: "Mapeie pelo menos data, descrição e valor." });
+      if (!mapping.date || !mapping.description || !(mapping.value || mapping.debitValue || mapping.creditValue)) {
+        return send(res, 400, { error: "Mapeie pelo menos data, descrição e valor. Se a planilha separar Débito e Crédito, mapeie uma dessas colunas de valor." });
       }
-      const preview = buildImportPreview(user.id, rows, mapping);
+      const preview = await buildSmartImportPreview(user.id, rows, mapping, { useAI: true });
       return send(res, 200, preview);
     }
 

@@ -1336,21 +1336,33 @@ exportReportCsvBtn?.addEventListener("click", exportReportCsv);
 statementImportForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = event.currentTarget.elements.statement;
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  const originalButton = button?.innerHTML;
   if (!input.files?.length) return toast("Selecione um arquivo CSV, Excel ou PDF.");
   const data = new FormData();
   data.append("statement", input.files[0]);
   try {
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = `<span class="button-spinner"></span><span>Lendo...</span>`;
+    }
     toast("Lendo o arquivo...");
-    const response = await fetch("/api/import/file", { method: "POST", body: data, credentials: "include" });
+    const response = await fetch("/api/import/file?ai=1", { method: "POST", body: data, credentials: "include" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Não foi possível ler o arquivo.");
     importRows = payload.rows || [];
     importMapping = payload.mapping || {};
     importSource = payload.kind || "importado";
     renderImportMapping(payload.columns || [], importMapping);
-    renderImportPreview(payload.candidates || [], payload.notice, payload.summary, payload.errors);
+    renderImportPreview(payload.candidates || [], payload.notice, { ...(payload.summary || {}), ai: payload.ai }, payload.errors);
+    toast((payload.candidates || []).length ? "Arquivo lido. Revise a prévia antes de importar." : "Arquivo lido. Confira o mapeamento das colunas.");
   } catch (error) {
     toast(error.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalButton;
+    }
   }
 });
 
@@ -1361,7 +1373,9 @@ function renderImportMapping(columns, mapping) {
   const fields = [
     ["date", "Data", true],
     ["description", "Descrição", true],
-    ["value", "Valor", true],
+    ["value", "Valor único", false],
+    ["debitValue", "Valor de gasto/débito", false],
+    ["creditValue", "Valor de entrada/crédito", false],
     ["category", "Categoria", false],
     ["type", "Tipo (entrada/saída)", false],
     ["paymentMethod", "Forma de pagamento", false],
@@ -1374,7 +1388,7 @@ function renderImportMapping(columns, mapping) {
         ${columns.map((column) => `<option value="${escapeHtml(column)}"${mapping[key] === column ? " selected" : ""}>${escapeHtml(column)}</option>`).join("")}
       </select>
     </label>
-  `).join("");
+  `).join("") + `<p class="mapping-hint">Use "Valor único" quando a planilha tiver uma coluna só de valor. Se ela separar entradas e gastos, mapeie "Valor de gasto/débito" e/ou "Valor de entrada/crédito".</p>`;
 }
 
 function currentImportMapping() {
@@ -1389,11 +1403,11 @@ buildImportPreviewBtn?.addEventListener("click", async () => {
   if (!importRows.length) return toast("Importe um arquivo primeiro.");
   try {
     importMapping = currentImportMapping();
-    const preview = await api("/api/import/preview", {
+    const preview = await api("/api/import/preview?ai=1", {
       method: "POST",
       body: JSON.stringify({ rows: importRows, mapping: importMapping }),
     });
-    renderImportPreview(preview.candidates, "Confira a prévia antes de confirmar a importação.", preview.summary, preview.errors);
+    renderImportPreview(preview.candidates, "Confira a prévia antes de confirmar a importação.", { ...(preview.summary || {}), ai: preview.ai }, preview.errors);
   } catch (error) {
     toast(error.message);
   }
@@ -1402,13 +1416,19 @@ buildImportPreviewBtn?.addEventListener("click", async () => {
 function renderImportPreview(items, notice, summary = {}, errors = []) {
   importCandidates = items || [];
   importNotice.textContent = notice || "";
+  const ai = summary.ai || {};
+  const aiLabel = ai.source === "openai"
+    ? `OpenAI${ai.model ? ` (${ai.model})` : ""}`
+    : "Análise local";
   const summaryHtml = `
+    <span><strong>${summary.rows || importRows.length || importCandidates.length}</strong> linhas lidas</span>
     <span><strong>${summary.found || importCandidates.length}</strong> transações encontradas</span>
     <span><strong>${summary.importable || 0}</strong> prontas para importar</span>
     <span><strong>${currency.format(summary.income || 0)}</strong> entradas</span>
     <span><strong>${currency.format(summary.expenses || 0)}</strong> saídas</span>
     <span><strong>${summary.duplicates || 0}</strong> duplicadas</span>
     <span><strong>${summary.errors || 0}</strong> erros</span>
+    <span><strong>IA</strong> ${escapeHtml(aiLabel)}</span>
   `;
   if (importStats) {
     importStats.innerHTML = summaryHtml + (errors?.length ? `<p>${escapeHtml(errors[0].message)} ${errors.length > 1 ? `+ ${errors.length - 1} erro(s).` : ""}</p>` : "");
@@ -1422,15 +1442,21 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
         <td><input class="preview-check" type="checkbox" ${duplicate ? "disabled" : "checked"}></td>
         <td>${formatDate(item.date)}</td>
         <td>${escapeHtml(item.description)}</td>
+        <td><select class="preview-type" ${duplicate ? "disabled" : ""}>${typeOptions(item.value)}</select></td>
         <td><select class="preview-category" ${duplicate ? "disabled" : ""}>${categoryOptions(item.category)}</select></td>
-        <td class="${item.value < 0 ? "value-negative" : "value-positive"}">${currency.format(item.value)}</td>
-        <td>${escapeHtml(confidenceLabel(item.confidence))}</td>
+        <td class="preview-value ${item.value < 0 ? "value-negative" : "value-positive"}">${currency.format(item.value)}</td>
+        <td>${escapeHtml(confidenceLabel(item.confidence))}${item.aiReason ? `<small class="ai-reason">${escapeHtml(item.aiReason)}</small>` : ""}</td>
         <td>${duplicate ? `<span class="status-badge danger">Duplicada</span>` : `<span class="status-badge">${escapeHtml(status)}</span>`}</td>
       </tr>
     `;
-  }).join("") || `<tr><td colspan="7"><div class="empty-compact">Nenhuma transação reconhecida. Revise o arquivo ou o mapeamento de colunas.</div></td></tr>`;
+  }).join("") || `<tr><td colspan="8"><div class="empty-compact">Arquivo lido, mas nenhuma transação foi reconhecida. Revise o mapeamento de data, descrição e valor.</div></td></tr>`;
   setHidden(importPreviewCard, false);
   setHidden(confirmImportBtn, importCandidates.filter((item) => !item.duplicate).length === 0);
+}
+
+function typeOptions(value) {
+  const type = Number(value) >= 0 ? "entrada" : "saida";
+  return `<option value="saida"${type === "saida" ? " selected" : ""}>Gasto</option><option value="entrada"${type === "entrada" ? " selected" : ""}>Entrada</option>`;
 }
 
 function categoryOptions(selected) {
@@ -1438,13 +1464,25 @@ function categoryOptions(selected) {
 }
 
 importPreviewBody.addEventListener("change", (event) => {
-  if (!event.target.classList.contains("preview-category")) return;
   const row = event.target.closest("tr");
   const item = importCandidates[Number(row.dataset.index)];
-  item.category = event.target.value;
-  item.userCorrected = true;
-  item.confidence = "corrigida pelo usuário";
-  row.classList.toggle("pending-row", item.category === "Categoria pendente");
+  if (!item) return;
+  if (event.target.classList.contains("preview-category")) {
+    item.category = event.target.value;
+    item.userCorrected = true;
+    item.confidence = "corrigida pelo usuário";
+    row.classList.toggle("pending-row", item.category === "Categoria pendente");
+    return;
+  }
+  if (event.target.classList.contains("preview-type")) {
+    item.value = event.target.value === "entrada" ? Math.abs(Number(item.value || 0)) : -Math.abs(Number(item.value || 0));
+    item.userCorrected = true;
+    item.confidence = "corrigida pelo usuário";
+    const valueCell = row.querySelector(".preview-value");
+    valueCell.textContent = currency.format(item.value);
+    valueCell.classList.toggle("value-negative", item.value < 0);
+    valueCell.classList.toggle("value-positive", item.value >= 0);
+  }
 });
 
 confirmImportBtn.addEventListener("click", async () => {

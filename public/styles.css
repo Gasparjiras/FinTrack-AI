@@ -3120,6 +3120,27 @@ body.consent-inactive .sidebar .nav-item:not([data-view="configuracoes"]) {
   gap: 9px;
 }
 
+.mapping-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(16, 163, 127, .08);
+  color: #52605b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.ai-reason {
+  display: block;
+  margin-top: 4px;
+  max-width: 220px;
+  color: #68756f;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 @media (max-width: 980px) {
   .sidebar {
     min-height: auto;
