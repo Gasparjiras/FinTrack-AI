@@ -39,6 +39,7 @@ const confirmPasswordInput = document.querySelector("#confirmPasswordInput");
 const passwordBar = document.querySelector("#passwordBar");
 const registerButton = document.querySelector("#registerButton");
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const compactCurrency = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
 const themeColors = {
   ink: "#0E1F1B",
   paper: "#F7F5F0",
@@ -65,6 +66,27 @@ let transactionPage = 1;
 let editingGoalId = null;
 const transactionPageSize = 8;
 const charts = {};
+
+const premiumCenterTextPlugin = {
+  id: "premiumCenterText",
+  afterDraw(chart, _args, options) {
+    if (!options || !options.value) return;
+    const { ctx, chartArea } = chart;
+    if (!chartArea) return;
+    const x = (chartArea.left + chartArea.right) / 2;
+    const y = (chartArea.top + chartArea.bottom) / 2;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = options.labelColor || "#6F766F";
+    ctx.font = "600 12px Inter, system-ui, sans-serif";
+    ctx.fillText(options.label || "Total", x, y - 12);
+    ctx.fillStyle = options.valueColor || "#111A17";
+    ctx.font = "700 18px JetBrains Mono, Consolas, monospace";
+    ctx.fillText(options.value, x, y + 12);
+    ctx.restore();
+  },
+};
 
 function setHidden(element, hidden) {
   if (!element) return;
@@ -1087,6 +1109,47 @@ function renderVisibleCharts(view) {
   }
 }
 
+function compactMoney(value) {
+  const number = Number(value || 0);
+  const sign = number < 0 ? "-" : "";
+  return `${sign}R$ ${compactCurrency.format(Math.abs(number))}`;
+}
+
+function premiumLegend(dark = false) {
+  return {
+    display: true,
+    position: "top",
+    align: "start",
+    labels: {
+      boxWidth: 8,
+      boxHeight: 8,
+      color: dark ? "#F7F5F0" : themeColors.ink,
+      font: { family: "Inter, system-ui, sans-serif", size: 12, weight: 700 },
+      padding: 16,
+      usePointStyle: true,
+      pointStyle: "circle",
+    },
+  };
+}
+
+function premiumTooltip() {
+  return {
+    backgroundColor: "#0E1F1B",
+    borderColor: "rgba(255,255,255,.12)",
+    borderWidth: 1,
+    bodyColor: "#F7F5F0",
+    displayColors: true,
+    padding: 12,
+    titleColor: "#E7B86A",
+    titleFont: { family: "Inter, system-ui, sans-serif", size: 12, weight: 800 },
+    bodyFont: { family: "Inter, system-ui, sans-serif", size: 12, weight: 650 },
+    cornerRadius: 12,
+    callbacks: {
+      label: (context) => `${context.dataset.label || "Valor"}: ${currency.format(Number(context.raw || 0))}`,
+    },
+  };
+}
+
 function renderCategoryChart(key, canvasId, compact) {
   const dark = isDarkDashboardChart(canvasId);
   const items = analysis.categories || [];
@@ -1095,6 +1158,7 @@ function renderCategoryChart(key, canvasId, compact) {
     return;
   }
   setChartEmpty(key, canvasId, "");
+  const total = items.reduce((sum, item) => sum + Number(item.total || 0), 0);
   createChart(key, canvasId, {
     type: "doughnut",
     data: {
@@ -1102,24 +1166,29 @@ function renderCategoryChart(key, canvasId, compact) {
       datasets: [{
         data: items.map((item) => item.total),
         backgroundColor: items.map((item) => categoryColor(item.category)),
-        borderColor: dark ? "#292928" : "#ffffff",
-        borderWidth: dark ? 3 : 0,
+        borderColor: dark ? "#292928" : "#FBFAF6",
+        borderWidth: 5,
+        borderRadius: 8,
+        spacing: 3,
+        hoverOffset: 8,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: compact ? "68%" : "60%",
+      cutout: compact ? "72%" : "68%",
+      layout: { padding: compact ? 4 : 10 },
       plugins: {
-        legend: { display: !dark, position: "bottom", labels: { color: dark ? "#d8d7d2" : "#17201d", usePointStyle: true, boxWidth: 8 } },
+        legend: { display: false },
+        premiumCenterText: { label: "Total gasto", value: compactMoney(total) },
         tooltip: {
+          ...premiumTooltip(),
           callbacks: {
             title: (context) => context[0]?.label || "",
             label: (context) => {
               const value = Number(context.raw || 0);
-              const total = items.reduce((sum, item) => sum + Number(item.total || 0), 0);
               const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-              return [`${currency.format(value)}`, `${percent}% dos gastos do mês`];
+              return [`Valor: ${currency.format(value)}`, `${percent}% dos gastos do mês`];
             },
           },
         },
@@ -1136,8 +1205,18 @@ function renderFlowChart(key, canvasId) {
   setChartEmpty(key, canvasId, "");
   createChart(key, canvasId, {
     type: "bar",
-    data: { labels: ["Entradas", "Saídas", "Saldo"], datasets: [{ data: [analysis.totalIncome, analysis.totalExpenses, Math.max(analysis.balance, 0)], backgroundColor: [themeColors.emerald, themeColors.critical, themeColors.ai], borderRadius: 7 }] },
-    options: chartOptions(),
+    data: {
+      labels: ["Entradas", "Saídas", "Saldo"],
+      datasets: [{
+        label: "Valor",
+        data: [analysis.totalIncome, analysis.totalExpenses, Math.max(analysis.balance, 0)],
+        backgroundColor: [themeColors.emerald, themeColors.critical, themeColors.ai],
+        borderRadius: 14,
+        borderSkipped: false,
+        maxBarThickness: 58,
+      }],
+    },
+    options: chartOptions({ tooltipLabel: "Valor" }),
   });
 }
 
@@ -1168,11 +1247,17 @@ function renderMonthlyChart(key, canvasId) {
     data: {
       labels: items.map((item) => item.month),
       datasets: [
-        { label: "Entradas", data: items.map((item) => item.income), borderColor: themeColors.emerald, backgroundColor: "rgba(31,138,95,.08)", fill: true, tension: .32 },
-        { label: "Saídas", data: items.map((item) => item.expenses), borderColor: themeColors.critical, backgroundColor: "rgba(192,57,43,.06)", fill: true, tension: .32 },
+        { label: "Entradas", data: items.map((item) => item.income), borderColor: themeColors.emerald, backgroundColor: "rgba(31,138,95,.12)", fill: true, tension: .42, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: "#FFFFFF", pointBorderWidth: 2 },
+        { label: "Saídas", data: items.map((item) => item.expenses), borderColor: themeColors.critical, backgroundColor: "rgba(192,57,43,.08)", fill: true, tension: .42, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: "#FFFFFF", pointBorderWidth: 2 },
       ],
     },
-    options: { ...chartOptions(dark ? "dark" : "light"), plugins: { legend: { position: "top", align: "start", labels: { color: dark ? "#d8d7d2" : "#17201d", usePointStyle: true, boxWidth: 8 } } } },
+    options: {
+      ...chartOptions({ theme: dark ? "dark" : "light", tooltipLabel: "Valor" }),
+      plugins: {
+        ...chartOptions({ theme: dark ? "dark" : "light" }).plugins,
+        legend: premiumLegend(dark),
+      },
+    },
   });
 }
 
@@ -1186,10 +1271,20 @@ function renderGoalChart(key, canvasId) {
   createChart(key, canvasId, {
     type: "doughnut",
     data: {
-      labels: ["Concluido", "Falta"],
-      datasets: [{ data: [progress, Math.max(100 - progress, 0)], backgroundColor: [themeColors.emerald, themeColors.muted], borderWidth: 0 }],
+      labels: ["Concluído", "Falta"],
+      datasets: [{ data: [progress, Math.max(100 - progress, 0)], backgroundColor: [themeColors.emerald, "#E2DED4"], borderColor: "#FBFAF6", borderWidth: 5, borderRadius: 10, spacing: 2, hoverOffset: 4 }],
     },
-    options: { responsive: true, maintainAspectRatio: false, cutout: "72%", plugins: { legend: { position: "bottom" } } },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "76%",
+      layout: { padding: 12 },
+      plugins: {
+        legend: { display: false },
+        premiumCenterText: { label: "Progresso", value: `${progress}%` },
+        tooltip: premiumTooltip(),
+      },
+    },
   });
 }
 
@@ -1205,11 +1300,11 @@ function renderBudgetChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: themeColors.muted, borderRadius: 5 },
-        { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 5 },
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 16 },
+        { label: "Gasto atual", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 999, borderSkipped: false, maxBarThickness: 16 },
       ],
     },
-    options: { ...chartOptions(), indexAxis: "y", plugins: { legend: { position: "top" } } },
+    options: { ...chartOptions({ indexAxis: "y", tooltipLabel: "Valor" }), indexAxis: "y", plugins: { ...chartOptions().plugins, legend: premiumLegend(false) } },
   });
 }
 
@@ -1225,11 +1320,11 @@ function renderBudgetComparisonChart() {
     data: {
       labels: items.map((item) => item.category),
       datasets: [
-        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: themeColors.muted, borderRadius: 6 },
-        { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 6 },
+        { label: "Sugestão IA", data: items.map((item) => item.suggestedMonthly), backgroundColor: "#D8D6CF", borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
+        { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
       ],
     },
-    options: { ...chartOptions(), plugins: { legend: { display: true, position: "top" } } },
+    options: { ...chartOptions({ tooltipLabel: "Valor" }), plugins: { ...chartOptions().plugins, legend: premiumLegend(false) } },
   });
 }
 
@@ -1244,22 +1339,33 @@ function renderSavingsChart() {
     type: "bar",
     data: {
       labels: items.map((item) => item.category),
-      datasets: [{ label: "Economia mensal", data: items.map((item) => item.potentialMonthlySavings), backgroundColor: themeColors.emerald, borderRadius: 6 }],
+      datasets: [{ label: "Economia mensal", data: items.map((item) => item.potentialMonthlySavings), backgroundColor: themeColors.emerald, borderRadius: 999, borderSkipped: false, maxBarThickness: 54 }],
     },
-    options: chartOptions(),
+    options: chartOptions({ tooltipLabel: "Economia mensal" }),
   });
 }
 
-function chartOptions(theme = "light") {
+function chartOptions(settings = "light") {
+  const theme = typeof settings === "string" ? settings : settings.theme || "light";
   const dark = theme === "dark";
   const tickColor = dark ? "#aaa9a4" : "#64716c";
+  const gridColor = dark ? "rgba(255,255,255,.18)" : "rgba(14,31,27,.08)";
   return {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
+    interaction: { intersect: false, mode: "index" },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        ...premiumTooltip(),
+        callbacks: {
+          label: (context) => `${context.dataset.label || settings.tooltipLabel || "Valor"}: ${currency.format(Number(context.raw || 0))}`,
+        },
+      },
+    },
     scales: {
-      y: { beginAtZero: true, grid: { color: dark ? "rgba(255,255,255,.22)" : "rgba(100,113,108,.12)" }, ticks: { color: tickColor } },
-      x: { grid: { display: false }, ticks: { color: tickColor } },
+      y: { beginAtZero: true, border: { display: false }, grid: { color: gridColor, drawTicks: false }, ticks: { color: tickColor, padding: 10, callback: (value) => compactMoney(Number(value)) } },
+      x: { border: { display: false }, grid: { display: false }, ticks: { color: tickColor, maxRotation: 0, autoSkip: true } },
     },
   };
 }
@@ -1267,7 +1373,12 @@ function chartOptions(theme = "light") {
 function createChart(key, id, config) {
   if (charts[key]) charts[key].destroy();
   const canvas = document.querySelector(`#${id}`);
-  if (canvas && !canvas.closest("[hidden]")) charts[key] = new Chart(canvas, config);
+  if (canvas && !canvas.closest("[hidden]")) {
+    charts[key] = new Chart(canvas, {
+      ...config,
+      plugins: [...(config.plugins || []), premiumCenterTextPlugin],
+    });
+  }
 }
 
 function setChartEmpty(key, canvasId, text) {
