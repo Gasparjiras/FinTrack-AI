@@ -367,6 +367,19 @@ async function readUploadedStatement(req) {
   throw new Error("Arquivo não encontrado no envio.");
 }
 
+function repairText(value) {
+  let text = String(value || "");
+  if (/[ÃÂ]/.test(text)) {
+    try {
+      const repaired = Buffer.from(text, "latin1").toString("utf8");
+      if (!repaired.includes("�")) text = repaired;
+    } catch {
+      // Keep the original text when decoding is not possible.
+    }
+  }
+  return text;
+}
+
 function parseCsvLine(line, delimiter) {
   const values = [];
   let current = "";
@@ -380,13 +393,13 @@ function parseCsvLine(line, delimiter) {
     } else if (char === '"') {
       quoted = !quoted;
     } else if (char === delimiter && !quoted) {
-      values.push(current.trim());
+      values.push(repairText(current.trim()));
       current = "";
     } else {
       current += char;
     }
   }
-  values.push(current.trim());
+  values.push(repairText(current.trim()));
   return values;
 }
 
@@ -401,12 +414,136 @@ function importTransactionsFromCSV(buffer) {
     ["\t", (lines[0].match(/\t/g) || []).length],
   ].sort((a, b) => b[1] - a[1]);
   const delimiter = delimiterCounts[0][1] > 0 ? delimiterCounts[0][0] : ",";
-  const columns = parseCsvLine(lines[0], delimiter).map((column, index) => String(column || `Coluna ${index + 1}`).trim());
-  const rows = lines.slice(1, 501).map((line) => {
-    const values = parseCsvLine(line, delimiter);
+  const matrix = lines.slice(0, 501).map((line) => parseCsvLine(line, delimiter));
+  const plannerRows = extractPlannerCsvTransactions(matrix);
+  if (plannerRows.length > 0) {
+    return {
+      columns: ["Data", "Descrição", "Valor", "Categoria", "Tipo", "Forma de pagamento", "Status", "Origem"],
+      rows: plannerRows,
+      layout: "planner",
+    };
+  }
+  const columns = matrix[0].map((column, index) => String(column || `Coluna ${index + 1}`).trim());
+  const rows = matrix.slice(1, 501).map((values) => {
     return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
   });
   return { columns, rows };
+}
+
+function detectPlannerMonth(matrix) {
+  const months = {
+    janeiro: "01", fevereiro: "02", marco: "03", março: "03", abril: "04", maio: "05", junho: "06",
+    julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12",
+  };
+  for (const row of matrix.slice(0, 8)) {
+    for (const cell of row) {
+      const text = normalizeColumnName(cell);
+      const year = (text.match(/\b(20\d{2})\b/) || [])[1];
+      const monthName = Object.keys(months).find((name) => text.includes(normalizeColumnName(name)));
+      if (year && monthName) return { year, month: months[monthName] };
+    }
+  }
+  const now = new Date();
+  return { year: String(now.getFullYear()), month: String(now.getMonth() + 1).padStart(2, "0") };
+}
+
+function spreadsheetCategoryToAllowed(value, description = "") {
+  const category = normalizeColumnName(value);
+  const text = normalizeColumnName(`${value} ${description}`);
+  if (/locomocao|transporte|gasolina|moto|corrida/.test(text)) return "Transporte";
+  if (/comida|lanche|ifood|restaurante|sorvete|doce|mercado|chocolate|cafe|pao|padaria/.test(text)) return /mercado/.test(text) ? "Mercado" : "Alimentação";
+  if (/conta|internet|celular|agua|energia|fixo/.test(text)) return "Contas fixas";
+  if (/estudo|faculdade|curso|api tgi|educacao/.test(text)) return "Educação";
+  if (/saude|dentista|farmacia|consulta/.test(text)) return "Saúde";
+  if (/assinatura|spotify|crunchyroll|netflix|disney|hbo/.test(text)) return "Assinaturas";
+  if (/lazer|cinema|festa|show/.test(text)) return "Lazer";
+  if (/eletronico|roupa|presente|beleza|tenis|monitor|celular|brinquedo/.test(text)) return "Compras";
+  if (/receita|salario|vr|vt|freelance|restante/.test(text)) return "Receita";
+  if (ALLOWED_CATEGORIES.includes(value)) return value;
+  return category ? "Outros" : "";
+}
+
+function extractPlannerCsvTransactions(matrix) {
+  const { year, month } = detectPlannerMonth(matrix);
+  const fallbackDate = `${year}-${month}-01`;
+  const rows = [];
+  const add = ({ description, value, date, category, type, paymentMethod, status, origin }) => {
+    const cleanDescription = repairText(description).trim();
+    const parsedValue = parseMoney(value);
+    if (!cleanDescription || cleanDescription.toLowerCase().startsWith("total") || parsedValue === null || parsedValue === 0) return;
+    const signedValue = type === "entrada" ? Math.abs(parsedValue) : -Math.abs(parsedValue);
+    rows.push({
+      Data: toIsoDate(date, Number(year)) || fallbackDate,
+      "Descrição": cleanDescription.slice(0, 120),
+      Valor: signedValue,
+      Categoria: type === "entrada" ? "Receita" : spreadsheetCategoryToAllowed(category, cleanDescription),
+      Tipo: type,
+      "Forma de pagamento": repairText(paymentMethod || origin || "Planilha").trim(),
+      Status: status || "Concluida",
+      Origem: origin || "Planilha financeira",
+    });
+  };
+
+  for (let rowIndex = 0; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex];
+    for (let col = 0; col < row.length; col += 1) {
+      const title = normalizeColumnName(row[col]);
+      if (!["fixos", "gastos do mes", "parcelamentos"].includes(title)) continue;
+      const headerRow = matrix[rowIndex + 1] || [];
+      const header = {};
+      for (let offset = 0; offset <= 7; offset += 1) {
+        const key = normalizeColumnName(headerRow[col + offset]);
+        if (key) header[key] = col + offset;
+      }
+      const nameCol = header.nome;
+      const valueCol = header.valor;
+      if (nameCol === undefined || valueCol === undefined) continue;
+      for (let r = rowIndex + 2; r < matrix.length; r += 1) {
+        const current = matrix[r] || [];
+        const name = current[nameCol];
+        const value = current[valueCol];
+        const rowMarker = normalizeColumnName(current[col]);
+        if (rowMarker === "nome" || rowMarker === "parcelamentos" || rowMarker.startsWith("total de")) break;
+        if (!name && !value) continue;
+        add({
+          description: name,
+          value,
+          date: current[header.data],
+          category: current[header.categoria],
+          type: "saida",
+          paymentMethod: current[header.tipo],
+          status: String(current[header.pago] || "").toLowerCase() === "false" ? "Pendente" : "Concluida",
+          origin: repairText(row[col]),
+        });
+      }
+    }
+  }
+
+  for (let rowIndex = 0; rowIndex < matrix.length; rowIndex += 1) {
+    const row = matrix[rowIndex];
+    for (let col = 0; col < row.length; col += 1) {
+      if (normalizeColumnName(row[col]) !== "entradas") continue;
+      for (let r = rowIndex + 1; r < matrix.length; r += 1) {
+        const name = matrix[r]?.[col];
+        const value = matrix[r]?.[col + 1];
+        const marker = normalizeColumnName(name);
+        if (!name && !value) continue;
+        if (marker === "total" || marker === "saidas" || marker === "investimentos") break;
+        add({
+          description: name,
+          value,
+          date: fallbackDate,
+          category: "Receita",
+          type: "entrada",
+          paymentMethod: "Entrada da planilha",
+          status: "Concluida",
+          origin: "Entradas",
+        });
+      }
+    }
+  }
+
+  return rows;
 }
 
 function importTransactionsFromExcel(buffer) {
@@ -1955,6 +2092,7 @@ async function handleApi(req, res) {
       audit(user.id, "STATEMENT_FILE_ANALYZED", { filename: uploaded.filename, rows: parsed.rows.length }, req);
       return send(res, 200, {
         kind: extension === ".csv" ? "csv" : "excel",
+        layout: parsed.layout || "table",
         filename: uploaded.filename,
         columns: parsed.columns,
         rows: parsed.rows,

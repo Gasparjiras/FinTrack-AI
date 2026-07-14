@@ -57,11 +57,11 @@ Crie `.env` a partir de `.env.example`:
 
 ```text
 OPENAI_API_KEY=sua_chave_aqui
-OPENAI_MODEL=coloque_aqui_um_modelo_real_disponivel_na_sua_conta
+OPENAI_MODEL=gpt-5-nano
 OPENAI_DAILY_LIMIT=10
 ```
 
-Para usar a analise com IA, configure sua chave da OpenAI e o modelo disponivel na sua conta. A chave fica apenas no backend e nunca e enviada ao frontend.
+Para usar a analise com IA, configure sua chave da OpenAI e um modelo disponivel na sua conta. `gpt-5-nano` e uma opcao leve para classificacao e analises curtas; voce pode trocar por outro modelo depois. A chave fica apenas no backend e nunca e enviada ao frontend.
 
 Se `OPENAI_API_KEY` existir mas `OPENAI_MODEL` estiver vazio, o backend mostra no terminal:
 
