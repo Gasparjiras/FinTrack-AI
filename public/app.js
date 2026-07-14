@@ -66,6 +66,7 @@ let transactionPage = 1;
 let editingGoalId = null;
 const transactionPageSize = 8;
 const charts = {};
+const chartFontFamily = "Inter, Segoe UI, system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
 
 const premiumCenterTextPlugin = {
   id: "premiumCenterText",
@@ -79,10 +80,10 @@ const premiumCenterTextPlugin = {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = options.labelColor || "#6F766F";
-    ctx.font = "600 12px Inter, system-ui, sans-serif";
+    ctx.font = `700 12px ${chartFontFamily}`;
     ctx.fillText(options.label || "Total", x, y - 12);
     ctx.fillStyle = options.valueColor || "#111A17";
-    ctx.font = "700 18px JetBrains Mono, Consolas, monospace";
+    ctx.font = `800 ${options.valueSize || 17}px ${chartFontFamily}`;
     ctx.fillText(options.value, x, y + 12);
     ctx.restore();
   },
@@ -838,7 +839,7 @@ function updateGoalLivePreview() {
     const amount = remaining > 0 ? Math.max(monthly * multipliers[mode], 1) : 0;
     const finish = amount > 0 ? Math.ceil(remaining / amount) : 0;
     const selected = mode === intensity ? " active" : "";
-    return `<article class="economy-mode${selected}"><span>${labels[mode]}</span><strong>${currency.format(amount)}/mês</strong><small>Conclusão estimada em ${finish} mês(es)</small></article>`;
+    return `<article class="economy-mode${selected}"><span>${labels[mode]}</span><strong>${currency.format(amount)}</strong><small>por mês - conclusão estimada em ${finish} mês(es)</small></article>`;
   }).join("");
 }
 
@@ -935,7 +936,7 @@ function renderDashboardGoalCard() {
   const goal = analysis.goal;
   container.className = "goal-dashboard";
   container.innerHTML = `
-    <div class="goal-progress-ring" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong><span>alcancado</span></div>
+    <div class="goal-progress-ring" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong></div>
     <div class="goal-dashboard-info">
       <span class="status-chip ${goal.status.toLowerCase().replace(/\s+/g, "-")}">${escapeHtml(goal.status)}</span>
       <h4>${escapeHtml(goal.goal_name || objectiveLabel(goal.objective))}</h4>
@@ -1074,7 +1075,7 @@ function renderGoalSummary() {
   container.className = "goal-summary";
   const goal = analysis.goal;
   container.innerHTML = `
-    <div class="goal-progress-ring large" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong><span>da meta</span></div>
+    <div class="goal-progress-ring large" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong></div>
     <div><span>Meta</span><strong>${escapeHtml(goal.goal_name || objectiveLabel(goal.objective))}</strong></div>
     <div><span>Objetivo</span><strong>${escapeHtml(objectiveLabel(goal.objective))}</strong></div>
     <div><span>Valor total</span><strong>${currency.format(goal.target_value)}</strong></div>
@@ -1115,6 +1116,11 @@ function compactMoney(value) {
   return `${sign}R$ ${compactCurrency.format(Math.abs(number))}`;
 }
 
+function chartCenterMoney(value) {
+  const number = Number(value || 0);
+  return Math.abs(number) >= 10000 ? compactMoney(number) : currency.format(number);
+}
+
 function premiumLegend(dark = false) {
   return {
     display: true,
@@ -1124,7 +1130,7 @@ function premiumLegend(dark = false) {
       boxWidth: 8,
       boxHeight: 8,
       color: dark ? "#F7F5F0" : themeColors.ink,
-      font: { family: "Inter, system-ui, sans-serif", size: 12, weight: 700 },
+      font: { family: chartFontFamily, size: 12, weight: 700 },
       padding: 16,
       usePointStyle: true,
       pointStyle: "circle",
@@ -1141,8 +1147,8 @@ function premiumTooltip() {
     displayColors: true,
     padding: 12,
     titleColor: "#E7B86A",
-    titleFont: { family: "Inter, system-ui, sans-serif", size: 12, weight: 800 },
-    bodyFont: { family: "Inter, system-ui, sans-serif", size: 12, weight: 650 },
+    titleFont: { family: chartFontFamily, size: 12, weight: 800 },
+    bodyFont: { family: chartFontFamily, size: 12, weight: 650 },
     cornerRadius: 12,
     callbacks: {
       label: (context) => `${context.dataset.label || "Valor"}: ${currency.format(Number(context.raw || 0))}`,
@@ -1167,20 +1173,20 @@ function renderCategoryChart(key, canvasId, compact) {
         data: items.map((item) => item.total),
         backgroundColor: items.map((item) => categoryColor(item.category)),
         borderColor: dark ? "#292928" : "#FBFAF6",
-        borderWidth: 5,
-        borderRadius: 8,
-        spacing: 3,
-        hoverOffset: 8,
+        borderWidth: compact ? 4 : 3,
+        borderRadius: compact ? 5 : 4,
+        spacing: 1,
+        hoverOffset: 5,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: compact ? "72%" : "68%",
-      layout: { padding: compact ? 4 : 10 },
+      cutout: compact ? "74%" : "70%",
+      layout: { padding: compact ? 8 : 14 },
       plugins: {
         legend: { display: false },
-        premiumCenterText: { label: "Total gasto", value: compactMoney(total) },
+        premiumCenterText: { label: "Total do mês", value: chartCenterMoney(total), valueSize: compact ? 16 : 17 },
         tooltip: {
           ...premiumTooltip(),
           callbacks: {
@@ -1364,8 +1370,8 @@ function chartOptions(settings = "light") {
       },
     },
     scales: {
-      y: { beginAtZero: true, border: { display: false }, grid: { color: gridColor, drawTicks: false }, ticks: { color: tickColor, padding: 10, callback: (value) => compactMoney(Number(value)) } },
-      x: { border: { display: false }, grid: { display: false }, ticks: { color: tickColor, maxRotation: 0, autoSkip: true } },
+      y: { beginAtZero: true, border: { display: false }, grid: { color: gridColor, drawTicks: false }, ticks: { color: tickColor, padding: 10, font: { family: chartFontFamily, size: 11, weight: 650 }, callback: (value) => compactMoney(Number(value)) } },
+      x: { border: { display: false }, grid: { display: false }, ticks: { color: tickColor, maxRotation: 0, autoSkip: true, font: { family: chartFontFamily, size: 11, weight: 650 } } },
     },
   };
 }
