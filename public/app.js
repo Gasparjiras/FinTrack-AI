@@ -7,6 +7,7 @@ const goalForm = document.querySelector("#goalForm");
 const goalContributionForm = document.querySelector("#goalContributionForm");
 const categoryForm = document.querySelector("#categoryForm");
 const transactionsBody = document.querySelector("#transactionsBody");
+const transactionAiHelper = document.querySelector("#transactionAiHelper");
 const transactionSearch = document.querySelector("#transactionSearch");
 const transactionTypeFilter = document.querySelector("#transactionTypeFilter");
 const transactionCategoryFilter = document.querySelector("#transactionCategoryFilter");
@@ -29,6 +30,8 @@ const confirmImportBtn = document.querySelector("#confirmImportBtn");
 const exportReportCsvBtn = document.querySelector("#exportReportCsvBtn");
 const categorySuggestion = document.querySelector("#categorySuggestion");
 const goalLivePreview = document.querySelector("#goalLivePreview");
+const goalsList = document.querySelector("#goalsList");
+const goalContributionSelect = document.querySelector("#goalContributionSelect");
 const acceptConsentBtn = document.querySelector("#acceptConsentBtn");
 const revokeConsentBtn = document.querySelector("#revokeConsentBtn");
 const passwordInput = document.querySelector("#passwordInput");
@@ -39,6 +42,7 @@ const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "
 
 let transactions = [];
 let categories = [];
+let goals = [];
 let analysis = null;
 let importCandidates = [];
 let importRows = [];
@@ -48,6 +52,7 @@ let userConsentAccepted = true;
 let categoryManuallyChanged = false;
 let suggestionTimer = null;
 let transactionPage = 1;
+let editingGoalId = null;
 const transactionPageSize = 8;
 const charts = {};
 
@@ -271,6 +276,7 @@ transactionForm.addEventListener("submit", async (event) => {
     toast(id ? "Lançamento atualizado." : "Lançamento salvo.");
     resetTransactionForm();
     await refreshFinancialData();
+    showView("dashboard");
   } catch (error) {
     toast(error.message);
   }
@@ -298,6 +304,7 @@ async function loadTransactions() {
   renderTransactionsTable();
   renderRecentTransactions();
   updateTransactionStats();
+  renderTransactionAiHelper();
   renderStarterState();
   refreshIcons();
 }
@@ -356,6 +363,28 @@ function renderTransactionFilters() {
   const names = [...new Set(transactions.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   transactionCategoryFilter.innerHTML = `<option value="">Todas</option>${names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
   if (names.includes(current)) transactionCategoryFilter.value = current;
+}
+
+function renderTransactionAiHelper() {
+  if (!transactionAiHelper) return;
+  const pending = transactions.filter((item) => item.category === "Categoria pendente").length;
+  const learned = transactions.filter((item) => item.classification_source === "regra aprendida").length;
+  const automatic = transactions.filter((item) => ["regra local", "regra aprendida", "openai"].includes(String(item.classification_source || "").toLowerCase())).length;
+  const helperText = transactions.length === 0
+    ? "A IA aparece aqui para sugerir categorias enquanto você digita ou importa um extrato. Ela só pergunta quando não tiver confiança."
+    : pending > 0
+      ? `${pending} lançamento(s) precisam de revisão. Corrija só esses casos para o sistema aprender nas próximas importações.`
+      : "Os lançamentos estão categorizados. Ao corrigir uma categoria, o FinTrack aprende a regra para as próximas análises.";
+  transactionAiHelper.innerHTML = `
+    <div class="panel-head"><div><h3>IA nos lançamentos</h3><p>Ajuda automática para separar gastos, entradas e categorias.</p></div><i data-lucide="sparkles"></i></div>
+    <p>${escapeHtml(helperText)}</p>
+    <div class="automation-grid compact">
+      <div><span>Automáticos</span><strong>${automatic}</strong></div>
+      <div><span>Aprendidos</span><strong>${learned}</strong></div>
+      <div><span>Pendentes</span><strong>${pending}</strong></div>
+    </div>
+    <button type="button" class="secondary" data-go-view="ia"><i data-lucide="message-circle"></i><span>Ver análise da IA</span></button>
+  `;
 }
 
 function resetTransactionPagination() {
@@ -585,9 +614,12 @@ function statusColor(item, fallback) {
 goalForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await api("/api/goal", { method: "PUT", body: JSON.stringify(formData(goalForm)) });
+    const data = formData(goalForm);
+    if (editingGoalId) data.id = editingGoalId;
+    const result = await api("/api/goal", { method: "PUT", body: JSON.stringify(data) });
+    editingGoalId = result.id || editingGoalId;
     toast("Meta salva.");
-    await loadGoal();
+    await loadGoal(editingGoalId);
     await loadAnalysis(false);
   } catch (error) {
     toast(error.message);
@@ -596,45 +628,124 @@ goalForm.addEventListener("submit", async (event) => {
 
 goalForm.addEventListener("input", updateGoalLivePreview);
 
+goalsList?.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-goal-edit]");
+  const newButton = event.target.closest("[data-goal-new]");
+  if (newButton) {
+    resetGoalForm();
+    goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (editButton) {
+    const goal = goals.find((item) => String(item.id) === String(editButton.dataset.goalEdit));
+    if (goal) {
+      fillGoalForm(goal);
+      goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+});
+
 goalContributionForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
+    const data = formData(goalContributionForm);
+    if (goalContributionSelect) data.goalId = goalContributionSelect.value;
     await api("/api/goal/contribution", {
       method: "POST",
-      body: JSON.stringify(formData(goalContributionForm)),
+      body: JSON.stringify(data),
     });
     goalContributionForm.reset();
     goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
     toast("Valor guardado adicionado à meta e aos lançamentos.");
     await refreshFinancialData();
     await loadGoal();
+    if (goalContributionSelect && goals[0]) goalContributionSelect.value = goals[0].id;
     showView("metas");
   } catch (error) {
     toast(error.message);
   }
 });
 
-async function loadGoal() {
+async function loadGoal(selectedGoalId) {
   const result = await api("/api/goal");
+  goals = result.goals || (result.goal ? [result.goal] : []);
+  renderGoalsList();
+  renderGoalContributionOptions();
   if (goalContributionForm?.elements.date && !goalContributionForm.elements.date.value) {
     goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
   }
-  if (!result.goal) {
+  if (!goals.length) {
+    resetGoalForm();
     updateGoalLivePreview();
     return;
   }
-  goalForm.elements.goalName.value = result.goal.goal_name || "";
-  goalForm.elements.objective.value = result.goal.objective;
-  goalForm.elements.targetValue.value = result.goal.target_value;
-  goalForm.elements.savedAmount.value = result.goal.saved_amount || 0;
-  goalForm.elements.plannedMonthlySavings.value = result.goal.planned_monthly_savings || "";
-  goalForm.elements.targetMonths.value = result.goal.target_months;
-  goalForm.elements.intensity.value = result.goal.intensity;
+  const selected = goals.find((item) => String(item.id) === String(selectedGoalId || editingGoalId)) || goals[0];
+  fillGoalForm(selected);
+  if (goalContributionSelect && !goalContributionSelect.value) goalContributionSelect.value = selected.id;
+  refreshIcons();
+}
+
+function fillGoalForm(goal) {
+  editingGoalId = goal?.id || null;
+  goalForm.elements.goalName.value = goal?.goal_name || "";
+  goalForm.elements.objective.value = goal?.objective || "";
+  goalForm.elements.targetValue.value = goal?.target_value || "";
+  goalForm.elements.savedAmount.value = goal?.saved_amount || 0;
+  goalForm.elements.plannedMonthlySavings.value = goal?.planned_monthly_savings || "";
+  goalForm.elements.targetMonths.value = goal?.target_months || "";
+  goalForm.elements.intensity.value = goal?.intensity || "equilibrado";
+  const title = goalForm.querySelector(".panel-head h3");
+  if (title) title.textContent = editingGoalId ? "Editar meta" : "Nova meta";
   updateGoalLivePreview();
 }
 
+function resetGoalForm() {
+  editingGoalId = null;
+  goalForm.reset();
+  goalForm.elements.savedAmount.value = 0;
+  goalForm.elements.intensity.value = "equilibrado";
+  const title = goalForm.querySelector(".panel-head h3");
+  if (title) title.textContent = "Nova meta";
+  updateGoalLivePreview();
+}
+
+function renderGoalsList() {
+  if (!goalsList) return;
+  if (!goals.length) {
+    goalsList.innerHTML = `<div class="empty-compact">Você ainda não criou nenhuma meta. Preencha o formulário para começar.</div>`;
+    return;
+  }
+  goalsList.innerHTML = `
+    ${goals.map((goal) => `
+      <article class="goal-item-card">
+        <div class="goal-item-head">
+          <div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
+          <button type="button" class="icon-button secondary" data-goal-edit="${goal.id}" title="Editar meta"><i data-lucide="pencil"></i></button>
+        </div>
+        <div class="goal-mini-progress"><span style="width:${Math.min(goal.progressPercentage || 0, 100)}%"></span></div>
+        <div class="goal-item-grid">
+          <div><span>Guardado</span><strong>${currency.format(goal.saved_amount || 0)}</strong></div>
+          <div><span>Falta</span><strong>${currency.format(goal.remainingAmount || 0)}</strong></div>
+          <div><span>Necessário/mês</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div>
+          <div><span>Previsão</span><strong>${escapeHtml(goal.forecastConclusion || "-")}</strong></div>
+        </div>
+        <small>${goal.progressPercentage || 0}% concluído - ${escapeHtml(goal.status || "Em andamento")}</small>
+      </article>
+    `).join("")}
+    <button type="button" class="secondary" data-goal-new><i data-lucide="plus"></i><span>Criar outra meta</span></button>
+  `;
+}
+
+function renderGoalContributionOptions() {
+  if (!goalContributionSelect) return;
+  const current = goalContributionSelect.value;
+  goalContributionSelect.innerHTML = `<option value="">Selecione uma meta</option>${goals.map((goal) => `<option value="${goal.id}">${escapeHtml(goal.goal_name)} - falta ${currency.format(goal.remainingAmount || 0)}</option>`).join("")}`;
+  if (goals.some((goal) => String(goal.id) === String(current))) goalContributionSelect.value = current;
+  else if (goals[0]) goalContributionSelect.value = goals[0].id;
+}
+
 function updateGoalLivePreview() {
-  const goalName = goalForm.elements.goalName.value.trim() || "Meta principal";
+  const goalName = goalForm.elements.goalName.value.trim() || "Nova meta";
   const target = Number(goalForm.elements.targetValue.value || 0);
   const saved = Number(goalForm.elements.savedAmount.value || 0);
   const months = Number(goalForm.elements.targetMonths.value || 0);
@@ -705,11 +816,14 @@ async function loadAIStatus() {
 
 function updateSummaryKpis() {
   if (!analysis) return;
+  const goalList = analysis.goals || (analysis.goal ? [analysis.goal] : []);
+  const totalSavedGoals = goalList.reduce((sum, goal) => sum + Number(goal.saved_amount || 0), 0);
+  const totalRemainingGoals = goalList.reduce((sum, goal) => sum + Number(goal.remainingAmount || 0), 0);
   document.querySelector("#income").textContent = currency.format(analysis.totalIncome);
   document.querySelector("#expenses").textContent = currency.format(analysis.totalExpenses);
   document.querySelector("#balance").textContent = currency.format(analysis.balance);
-  document.querySelector("#savedGoalKpi").textContent = currency.format(analysis.goal?.saved_amount || 0);
-  document.querySelector("#savedGoalDetail").textContent = analysis.goal ? `${currency.format(analysis.goal.remainingAmount)} faltando` : "Sem meta ativa";
+  document.querySelector("#savedGoalKpi").textContent = currency.format(totalSavedGoals);
+  document.querySelector("#savedGoalDetail").textContent = goalList.length ? `${currency.format(totalRemainingGoals)} faltando em ${goalList.length} meta(s)` : "Sem meta ativa";
   document.querySelector("#goalProgressKpi").textContent = `${analysis.goal?.progressPercentage || 0}%`;
   document.querySelector("#goalProgressDetail").textContent = analysis.goal?.status || "Cadastre uma meta";
   document.querySelector("#suggestedSavingsKpi").textContent = currency.format(analysis.potentialMonthlySavings || 0);
@@ -1344,6 +1458,7 @@ confirmImportBtn.addEventListener("click", async () => {
   setHidden(importPreviewCard, true);
   setHidden(importMappingCard, true);
   await refreshFinancialData();
+  showView("dashboard");
 });
 
 async function loadAudit() {

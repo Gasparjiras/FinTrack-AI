@@ -98,13 +98,28 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS user_goals (
     user_id INTEGER PRIMARY KEY,
-    goal_name TEXT NOT NULL DEFAULT 'Meta principal',
+    goal_name TEXT NOT NULL DEFAULT 'Meta financeira',
     objective TEXT NOT NULL,
     target_value REAL NOT NULL,
     saved_amount REAL NOT NULL DEFAULT 0,
     planned_monthly_savings REAL NOT NULL DEFAULT 0,
     target_months INTEGER NOT NULL,
     intensity TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS financial_goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    goal_name TEXT NOT NULL DEFAULT 'Meta financeira',
+    objective TEXT NOT NULL,
+    target_value REAL NOT NULL,
+    saved_amount REAL NOT NULL DEFAULT 0,
+    planned_monthly_savings REAL NOT NULL DEFAULT 0,
+    target_months INTEGER NOT NULL,
+    intensity TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -168,7 +183,7 @@ function ensureColumn(table, column, definition) {
 }
 
 ensureColumn("user_goals", "saved_amount", "REAL NOT NULL DEFAULT 0");
-ensureColumn("user_goals", "goal_name", "TEXT NOT NULL DEFAULT 'Meta principal'");
+ensureColumn("user_goals", "goal_name", "TEXT NOT NULL DEFAULT 'Meta financeira'");
 ensureColumn("user_goals", "planned_monthly_savings", "REAL NOT NULL DEFAULT 0");
 ensureColumn("user_consents", "revoked_at", "TEXT");
 ensureColumn("transactions", "type", "TEXT NOT NULL DEFAULT 'saida'");
@@ -178,6 +193,27 @@ ensureColumn("transactions", "payment_method", "TEXT NOT NULL DEFAULT 'Manual'")
 ensureColumn("transactions", "transaction_status", "TEXT NOT NULL DEFAULT 'Concluida'");
 ensureColumn("transactions", "source", "TEXT NOT NULL DEFAULT 'manual'");
 ensureColumn("transactions", "external_id", "TEXT");
+
+const legacyGoals = db.prepare("SELECT * FROM user_goals").all();
+for (const goal of legacyGoals) {
+  const exists = db.prepare("SELECT id FROM financial_goals WHERE user_id = ? AND goal_name = ?").get(goal.user_id, goal.goal_name);
+  if (!exists) {
+    db.prepare(`
+      INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+    `).run(
+      goal.user_id,
+      goal.goal_name || "Meta financeira",
+      goal.objective,
+      Number(goal.target_value || 0),
+      Number(goal.saved_amount || 0),
+      Number(goal.planned_monthly_savings || 0),
+      Number(goal.target_months || 1),
+      goal.intensity || "equilibrado",
+      goal.updated_at || null
+    );
+  }
+}
 
 const term = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get("1.0");
 if (!term) {
@@ -874,7 +910,7 @@ function addMonthsLabel(months) {
 
 function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
   if (!goal) return null;
-  const goalName = String(goal.goal_name || "").trim() || "Meta principal";
+  const goalName = String(goal.goal_name || "").trim() || "Meta financeira";
   const targetValue = Number(goal.target_value);
   const savedAmount = Math.min(Math.max(Number(goal.saved_amount || 0), 0), targetValue);
   const remainingAmount = Math.max(targetValue - savedAmount, 0);
@@ -917,6 +953,56 @@ function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
     feasible: ["No prazo", "Possível", "Adiantada"].includes(status),
     status,
   };
+}
+
+function goalPreview(goal) {
+  if (!goal) return null;
+  const targetValue = Number(goal.target_value || 0);
+  const savedAmount = Math.min(Math.max(Number(goal.saved_amount || 0), 0), targetValue);
+  const remainingAmount = Math.max(targetValue - savedAmount, 0);
+  const targetMonths = Math.max(Number(goal.target_months || 1), 1);
+  const plannedMonthlySavings = Math.max(Number(goal.planned_monthly_savings || 0), 0);
+  const monthlyTarget = remainingAmount / targetMonths;
+  const progressPercentage = targetValue > 0 ? Math.min(Math.round((savedAmount / targetValue) * 100), 100) : 0;
+  const forecastMonths = remainingAmount === 0
+    ? 0
+    : plannedMonthlySavings > 0
+      ? Math.ceil(remainingAmount / plannedMonthlySavings)
+      : targetMonths;
+  const status = remainingAmount === 0
+    ? "Concluída"
+    : plannedMonthlySavings >= monthlyTarget
+      ? "No prazo"
+      : plannedMonthlySavings > 0
+        ? "Ajustar ritmo"
+        : "Sem aporte definido";
+  return {
+    ...goal,
+    target_value: targetValue,
+    saved_amount: savedAmount,
+    planned_monthly_savings: plannedMonthlySavings,
+    target_months: targetMonths,
+    remainingAmount,
+    progressPercentage,
+    monthlyTarget,
+    forecastMonths,
+    forecastConclusion: addMonthsLabel(forecastMonths),
+    status,
+  };
+}
+
+function getUserGoals(userId) {
+  return db.prepare(`
+    SELECT id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, created_at, updated_at
+    FROM financial_goals
+    WHERE user_id = ?
+    ORDER BY CASE WHEN saved_amount < target_value THEN 0 ELSE 1 END, updated_at DESC, id DESC
+  `).all(userId).map(goalPreview);
+}
+
+function getPrimaryGoal(userId) {
+  const goals = getUserGoals(userId);
+  return goals[0] || null;
 }
 
 function detectAnomalies(transactions, categories, categoryBudgets, months) {
@@ -1245,7 +1331,7 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       nextActions: localAnalysis.aiBlocks.nextActions,
     },
   };
-  const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, goal);
+  const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, localAnalysis.goals || goal);
   const cached = db.prepare("SELECT response_json FROM ai_analysis_cache WHERE user_id = ? AND fingerprint = ?").get(userId, fingerprint);
   if (cached) {
     return { plan: JSON.parse(cached.response_json), source: "openai", model: OPENAI_MODEL, cached: true, warning: null };
@@ -1307,6 +1393,16 @@ function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, go
       updated: item.updated_at || null,
     }));
 
+  const goalSnapshot = (Array.isArray(goal) ? goal : goal ? [goal] : []).map((item) => ({
+    id: item.id || null,
+    name: item.goal_name,
+    target: Number(item.target_value || 0),
+    saved: Number(item.saved_amount || 0),
+    monthly: Number(item.planned_monthly_savings || 0),
+    months: Number(item.target_months || 0),
+    intensity: item.intensity,
+    updated: item.updated_at || null,
+  }));
   return crypto.createHash("sha256").update(JSON.stringify({
     purpose: "monthly-ai-analysis-cache",
     model: OPENAI_MODEL,
@@ -1319,15 +1415,7 @@ function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, go
     lastAlteration,
     categorySnapshot,
     budgetSnapshot,
-    goal: goal ? {
-      name: goal.goal_name,
-      target: Number(goal.target_value || 0),
-      saved: Number(goal.saved_amount || 0),
-      monthly: Number(goal.planned_monthly_savings || 0),
-      months: Number(goal.target_months || 0),
-      intensity: goal.intensity,
-      updated: goal.updated_at || null,
-    } : null,
+    goals: goalSnapshot,
   })).digest("hex");
 }
 
@@ -1383,6 +1471,7 @@ function revokeConsentAndClearData(userId, req) {
   try {
     db.prepare("DELETE FROM transactions WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM user_goals WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM financial_goals WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_daily_usage WHERE user_id = ?").run(userId);
@@ -1621,8 +1710,8 @@ async function handleApi(req, res) {
     if (req.method === "GET" && url.pathname === "/api/goal") {
       const user = requireUser(req, res);
       if (!user) return;
-      const goal = db.prepare("SELECT goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, updated_at FROM user_goals WHERE user_id = ?").get(user.id) || null;
-      return send(res, 200, { goal });
+      const goals = getUserGoals(user.id);
+      return send(res, 200, { goal: goals[0] || null, goals });
     }
 
     if (req.method === "PUT" && url.pathname === "/api/goal") {
@@ -1630,6 +1719,7 @@ async function handleApi(req, res) {
       if (!user) return;
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de criar metas financeiras." });
       const body = await readJson(req);
+      const goalId = Number(body.id || body.goalId || 0);
       const goalName = String(body.goalName || body.goal_name || "").trim();
       const objective = String(body.objective || "").trim();
       const targetValue = Number(body.targetValue);
@@ -1647,21 +1737,24 @@ async function handleApi(req, res) {
       if (savedAmount > targetValue) return send(res, 400, { error: "O valor já guardado não pode ser maior que a meta." });
       if (!Number.isInteger(targetMonths) || targetMonths < 1 || targetMonths > 120) return send(res, 400, { error: "O prazo deve ter entre 1 e 120 meses." });
       if (!["leve", "equilibrado", "intenso"].includes(intensity)) return send(res, 400, { error: "Selecione um ritmo válido." });
-      db.prepare(`
-        INSERT INTO user_goals (user_id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-          goal_name = excluded.goal_name,
-          objective = excluded.objective,
-          target_value = excluded.target_value,
-          saved_amount = excluded.saved_amount,
-          planned_monthly_savings = excluded.planned_monthly_savings,
-          target_months = excluded.target_months,
-          intensity = excluded.intensity,
-          updated_at = CURRENT_TIMESTAMP
-      `).run(user.id, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity);
-      audit(user.id, "FINANCIAL_GOAL_UPDATED", { goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity }, req);
-      return send(res, 200, { ok: true });
+      let savedGoalId = goalId;
+      if (goalId > 0) {
+        const existing = db.prepare("SELECT id FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+        if (!existing) return send(res, 404, { error: "Meta não encontrada." });
+        db.prepare(`
+          UPDATE financial_goals
+          SET goal_name = ?, objective = ?, target_value = ?, saved_amount = ?, planned_monthly_savings = ?, target_months = ?, intensity = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_id = ?
+        `).run(goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity, goalId, user.id);
+      } else {
+        const result = db.prepare(`
+          INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(user.id, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity);
+        savedGoalId = result.lastInsertRowid;
+      }
+      audit(user.id, "FINANCIAL_GOAL_UPDATED", { goalId: savedGoalId, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity }, req);
+      return send(res, 200, { ok: true, id: savedGoalId });
     }
 
     if (req.method === "POST" && url.pathname === "/api/goal/contribution") {
@@ -1669,9 +1762,12 @@ async function handleApi(req, res) {
       if (!user) return;
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de atualizar metas financeiras." });
       ensureDefaultCategories(user.id);
-      const goal = db.prepare("SELECT goal_name, target_value, saved_amount FROM user_goals WHERE user_id = ?").get(user.id);
-      if (!goal) return send(res, 400, { error: "Crie uma meta antes de registrar quanto guardou." });
       const body = await readJson(req);
+      const goalId = Number(body.goalId || body.goal_id || 0);
+      const goal = goalId > 0
+        ? db.prepare("SELECT id, goal_name, target_value, saved_amount FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id)
+        : getPrimaryGoal(user.id);
+      if (!goal) return send(res, 400, { error: "Crie e selecione uma meta antes de registrar quanto guardou." });
       const amount = Math.abs(Number(body.amount));
       const date = String(body.date || new Date().toISOString().slice(0, 10)).trim();
       const note = String(body.note || "").trim().slice(0, 80);
@@ -1681,15 +1777,15 @@ async function handleApi(req, res) {
       const description = note || `Guardado para meta - ${goal.goal_name}`;
       db.exec("BEGIN");
       try {
-        db.prepare("UPDATE user_goals SET saved_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?")
-          .run(newSavedAmount, user.id);
+        db.prepare("UPDATE financial_goals SET saved_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+          .run(newSavedAmount, goal.id, user.id);
         const result = db.prepare(`
           INSERT INTO transactions (user_id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(user.id, description, -amount, date, "Metas", "saida", "manual", "manual", "Meta financeira", "Concluida", "meta");
-        audit(user.id, "GOAL_CONTRIBUTION_CREATED", { amount, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid }, req);
+        audit(user.id, "GOAL_CONTRIBUTION_CREATED", { goalId: goal.id, goalName: goal.goal_name, amount, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid }, req);
         db.exec("COMMIT");
-        return send(res, 201, { ok: true, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid });
+        return send(res, 201, { ok: true, goalId: goal.id, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid });
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
@@ -1701,10 +1797,12 @@ async function handleApi(req, res) {
       if (!user) return;
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo para liberar a análise financeira." });
       const rows = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
-      const goal = db.prepare("SELECT goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, updated_at FROM user_goals WHERE user_id = ?").get(user.id) || null;
+      const goals = getUserGoals(user.id);
+      const goal = goals[0] || null;
       audit(user.id, "AI_ANALYSIS_REQUESTED", { transactions: rows.length }, req);
       const budgets = getCategoryBudgets(user.id);
       const localAnalysis = buildFinancialAnalysis(rows, goal, budgets);
+      localAnalysis.goals = goals;
       const useOpenAI = url.searchParams.get("useAI") === "1";
       const aiResult = useOpenAI
         ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis)
@@ -1887,9 +1985,10 @@ async function handleApi(req, res) {
         FROM user_consents uc JOIN consent_terms ct ON ct.id = uc.term_id
         WHERE uc.user_id = ?
       `).all(user.id);
-      const goal = db.prepare("SELECT goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, updated_at FROM user_goals WHERE user_id = ?").get(user.id) || null;
+      const goals = getUserGoals(user.id);
+      const goal = goals[0] || null;
       const categoryRules = loadCategoryRules(user.id);
-      return send(res, 200, { user, consents, goal, categoryRules, transactions }, {
+      return send(res, 200, { user, consents, goal, goals, categoryRules, transactions }, {
         "Content-Disposition": "attachment; filename=\"meus-dados-financeiros.json\"",
       });
     }

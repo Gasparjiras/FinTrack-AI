@@ -2998,6 +2998,145 @@ body.consent-inactive .sidebar .nav-item:not([data-view="configuracoes"]) {
   opacity: .48;
 }
 
+/* Ajustes de usabilidade: a lateral acompanha a pagina em vez de travar a rolagem. */
+.dashboard-shell {
+  align-items: stretch;
+  overflow: visible;
+}
+
+.sidebar {
+  position: static;
+  height: auto;
+  min-height: 100vh;
+  align-self: stretch;
+  overflow: visible;
+}
+
+.app-view[data-page="gastos"] #transactionForm {
+  grid-row: span 2;
+}
+
+.app-view[data-page="gastos"] .insight-panel {
+  grid-column: 2;
+}
+
+.transaction-ai-helper {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(16, 163, 127, .14), transparent 34%),
+    #ffffff;
+}
+
+.transaction-ai-helper .panel-head {
+  align-items: center;
+}
+
+.transaction-ai-helper .panel-head svg {
+  width: 28px;
+  height: 28px;
+  color: #10a37f;
+}
+
+.transaction-ai-helper p {
+  margin: 0;
+  color: #52605b;
+  line-height: 1.55;
+}
+
+.automation-grid.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.goals-list {
+  display: grid;
+  gap: 12px;
+}
+
+.goal-item-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(16, 24, 22, .08);
+  border-radius: 18px;
+  padding: 14px;
+  background: #fbfdfc;
+}
+
+.goal-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.goal-item-head span,
+.goal-item-grid span,
+.goal-item-card small,
+.goal-select-card {
+  color: #68756f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.goal-item-head strong {
+  display: block;
+  margin-top: 3px;
+  color: #111917;
+  font-size: 16px;
+}
+
+.goal-mini-progress {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e5ebe8;
+}
+
+.goal-mini-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10a37f, #4766d9);
+}
+
+.goal-item-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.goal-item-grid div {
+  border-radius: 12px;
+  padding: 10px;
+  background: #f3f7f5;
+}
+
+.goal-item-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #111917;
+}
+
+.goal-select-card {
+  display: grid;
+  gap: 9px;
+}
+
+@media (max-width: 980px) {
+  .sidebar {
+    min-height: auto;
+  }
+
+  .app-view[data-page="gastos"] #transactionForm,
+  .app-view[data-page="gastos"] .insight-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .automation-grid.compact,
+  .goal-item-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* FinTrack AI dashboard polish inspired by modern fintech panels */
 .dashboard-active,
 .dashboard-shell {
