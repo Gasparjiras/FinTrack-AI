@@ -115,6 +115,7 @@ db.exec(`
     goal_name TEXT NOT NULL DEFAULT 'Meta financeira',
     objective TEXT NOT NULL,
     target_value REAL NOT NULL,
+    initial_saved_amount REAL NOT NULL DEFAULT 0,
     saved_amount REAL NOT NULL DEFAULT 0,
     planned_monthly_savings REAL NOT NULL DEFAULT 0,
     target_months INTEGER NOT NULL,
@@ -185,6 +186,7 @@ function ensureColumn(table, column, definition) {
 ensureColumn("user_goals", "saved_amount", "REAL NOT NULL DEFAULT 0");
 ensureColumn("user_goals", "goal_name", "TEXT NOT NULL DEFAULT 'Meta financeira'");
 ensureColumn("user_goals", "planned_monthly_savings", "REAL NOT NULL DEFAULT 0");
+ensureColumn("financial_goals", "initial_saved_amount", "REAL NOT NULL DEFAULT 0");
 ensureColumn("user_consents", "revoked_at", "TEXT");
 ensureColumn("transactions", "type", "TEXT NOT NULL DEFAULT 'saida'");
 ensureColumn("transactions", "classification_confidence", "TEXT NOT NULL DEFAULT 'manual'");
@@ -199,13 +201,14 @@ for (const goal of legacyGoals) {
   const exists = db.prepare("SELECT id FROM financial_goals WHERE user_id = ? AND goal_name = ?").get(goal.user_id, goal.goal_name);
   if (!exists) {
     db.prepare(`
-      INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+      INSERT INTO financial_goals (user_id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
     `).run(
       goal.user_id,
       goal.goal_name || "Meta financeira",
       goal.objective,
       Number(goal.target_value || 0),
+      Number(goal.saved_amount || 0),
       Number(goal.saved_amount || 0),
       Number(goal.planned_monthly_savings || 0),
       Number(goal.target_months || 1),
@@ -1114,6 +1117,24 @@ function addMonthsLabel(months) {
   return date.toISOString().slice(0, 7);
 }
 
+function parseGoalDate(value) {
+  const [year, month, day] = String(value || "").slice(0, 10).split("-").map(Number);
+  if (!year || !month) return new Date();
+  return new Date(year, month - 1, day || 1);
+}
+
+function formatMonthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function addMonthsFromDate(date, months) {
+  return new Date(date.getFullYear(), date.getMonth() + Math.max(Number(months || 0), 0), 1);
+}
+
+function monthsBetween(startDate, endDate = new Date()) {
+  return Math.max((endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth()), 0);
+}
+
 function normalizeMonthParam(value) {
   const month = String(value || "").trim();
   return /^\d{4}-\d{2}$/.test(month) ? month : null;
@@ -1219,7 +1240,7 @@ function buildMonthlyComparison(transactions, selectedMonth) {
   };
 }
 
-function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
+function buildGoalPlanLegacy(goal, monthlyBalance, potentialMonthlySavings) {
   if (!goal) return null;
   const goalName = String(goal.goal_name || "").trim() || "Meta financeira";
   const targetValue = Number(goal.target_value);
@@ -1262,6 +1283,93 @@ function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
     monthlyBalance,
     requiredAdjustment,
     feasible: ["No prazo", "Possível", "Adiantada"].includes(status),
+    status,
+  };
+}
+
+function buildGoalMetrics(goal, today = new Date()) {
+  if (!goal) return null;
+  const goalName = String(goal.goal_name || "").trim() || "Meta financeira";
+  const targetValue = Number(goal.target_value || 0);
+  const savedAmount = Math.min(Math.max(Number(goal.saved_amount || 0), 0), targetValue);
+  const initialSavedAmount = Math.min(Math.max(Number(goal.initial_saved_amount ?? goal.saved_amount ?? 0), 0), savedAmount, targetValue);
+  const remainingAmount = Math.max(targetValue - savedAmount, 0);
+  const targetMonths = Math.max(Number(goal.target_months || 1), 1);
+  const startDate = parseGoalDate(goal.created_at || goal.updated_at);
+  const elapsedMonths = Math.min(monthsBetween(startDate, today), targetMonths);
+  const monthsRemaining = remainingAmount === 0 ? 0 : Math.max(targetMonths - elapsedMonths, 1);
+  const targetConclusion = formatMonthKey(addMonthsFromDate(startDate, targetMonths));
+  const plannedTotal = Math.max(targetValue - initialSavedAmount, 0);
+  const originalMonthlyTarget = plannedTotal / targetMonths;
+  const monthlyTarget = remainingAmount / Math.max(monthsRemaining, 1);
+  const modeMultipliers = { leve: 0.75, equilibrado: 1, intenso: 1.35 };
+  const modeLabels = { leve: "Leve", equilibrado: "Equilibrado", intenso: "Agressivo" };
+  const modeMultiplier = modeMultipliers[goal.intensity] || 1;
+  const modeMonthlyTarget = remainingAmount > 0 ? Math.max(monthlyTarget * modeMultiplier, 1) : 0;
+  const plannedMonthlySavings = modeMonthlyTarget;
+  const forecastMonths = remainingAmount === 0 ? 0 : Math.ceil(remainingAmount / Math.max(modeMonthlyTarget, 1));
+  const plannedForecastMonths = plannedMonthlySavings > 0 && remainingAmount > 0 ? Math.ceil(remainingAmount / plannedMonthlySavings) : null;
+  const expectedSavedNow = Math.min(targetValue, initialSavedAmount + (plannedTotal * (elapsedMonths / targetMonths)));
+  const paceDifference = Number((savedAmount - expectedSavedNow).toFixed(2));
+  const progressPercentage = targetValue > 0 ? Math.min(Math.round((savedAmount / targetValue) * 100), 100) : 0;
+  const tolerance = Math.max(originalMonthlyTarget * 0.35, targetValue * 0.02, 1);
+  let status = "No prazo";
+  if (remainingAmount === 0) status = "Concluída";
+  else if (elapsedMonths === 0) status = "Plano iniciado";
+  else if (paceDifference >= tolerance) status = "Adiantada";
+  else if (paceDifference >= -tolerance) status = "No prazo";
+  else if (monthsRemaining <= 2) status = "Crítica";
+  else status = "Ajustar ritmo";
+  const statusDetail = remainingAmount === 0
+    ? "Meta concluída. Você já atingiu o valor planejado."
+    : paceDifference >= 0
+      ? `Você está ${money(paceDifference)} acima do ritmo esperado para hoje.`
+      : `Você está ${money(Math.abs(paceDifference))} abaixo do ritmo esperado para hoje.`;
+  const smartRecommendation = remainingAmount === 0
+    ? "Não é necessário novo aporte para esta meta."
+    : `Para manter o prazo, guarde cerca de ${money(monthlyTarget)} por mês pelos próximos ${monthsRemaining} mês(es).`;
+  return {
+    ...goal,
+    goal_name: goalName,
+    target_value: targetValue,
+    initial_saved_amount: initialSavedAmount,
+    saved_amount: savedAmount,
+    planned_monthly_savings: plannedMonthlySavings,
+    remainingAmount,
+    progressPercentage,
+    target_months: targetMonths,
+    elapsedMonths,
+    monthsRemaining,
+    originalMonthlyTarget,
+    monthlyTarget,
+    modeMonthlyTarget,
+    modeLabel: modeLabels[goal.intensity] || "Equilibrado",
+    forecastMonths,
+    plannedForecastMonths,
+    forecastConclusion: addMonthsLabel(forecastMonths),
+    targetConclusion,
+    expectedSavedNow: Number(expectedSavedNow.toFixed(2)),
+    paceDifference,
+    statusDetail,
+    smartRecommendation,
+    feasible: ["Concluída", "Plano iniciado", "No prazo", "Adiantada"].includes(status),
+    status,
+  };
+}
+
+function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
+  const plan = buildGoalMetrics(goal);
+  if (!plan) return null;
+  const available = Math.max(Number(monthlyBalance || 0), 0);
+  const requiredAdjustment = Math.max(plan.monthlyTarget - available, 0);
+  const canRecoverWithSavings = available + Number(potentialMonthlySavings || 0) >= plan.monthlyTarget;
+  let status = plan.status;
+  if (plan.remainingAmount > 0 && ["Ajustar ritmo", "Crítica"].includes(status) && canRecoverWithSavings) status = "Recuperável";
+  return {
+    ...plan,
+    monthlyBalance,
+    requiredAdjustment,
+    feasible: ["Concluída", "Plano iniciado", "No prazo", "Adiantada", "Recuperável"].includes(status),
     status,
   };
 }
@@ -1314,7 +1422,7 @@ function buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPla
   }).sort((a, b) => b.currentMonthly - a.currentMonthly);
 }
 
-function goalPreview(goal) {
+function goalPreviewLegacy(goal) {
   if (!goal) return null;
   const targetValue = Number(goal.target_value || 0);
   const savedAmount = Math.min(Math.max(Number(goal.saved_amount || 0), 0), targetValue);
@@ -1352,9 +1460,13 @@ function goalPreview(goal) {
   };
 }
 
+function goalPreview(goal) {
+  return buildGoalMetrics(goal);
+}
+
 function getUserGoals(userId) {
   return db.prepare(`
-    SELECT id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity, created_at, updated_at
+    SELECT id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity, created_at, updated_at
     FROM financial_goals
     WHERE user_id = ?
     ORDER BY CASE WHEN saved_amount < target_value THEN 0 ELSE 1 END, updated_at DESC, id DESC
@@ -2141,9 +2253,9 @@ async function handleApi(req, res) {
         `).run(goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity, goalId, user.id);
       } else {
         const result = db.prepare(`
-          INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, planned_monthly_savings, target_months, intensity)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(user.id, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity);
+          INSERT INTO financial_goals (user_id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(user.id, goalName, objective, targetValue, savedAmount, savedAmount, plannedMonthlySavings, targetMonths, intensity);
         savedGoalId = result.lastInsertRowid;
       }
       audit(user.id, "FINANCIAL_GOAL_UPDATED", { goalId: savedGoalId, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity }, req);

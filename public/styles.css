@@ -1630,19 +1630,24 @@ td:last-child { width: 190px; }
 
 .status-atencao .category-status,
 .status-chip.atrasada,
-.status-chip.dificil {
+.status-chip.dificil,
+.status-chip.ajustar-ritmo,
+.status-chip.recuperavel {
   background: #fff0d4;
   color: #9a6500;
 }
 
-.status-acima .category-status {
+.status-acima .category-status,
+.status-chip.critica {
   background: #fde5df;
   color: #b83e36;
 }
 
 .status-chip.adiantada,
 .status-chip.possivel,
-.status-chip.no-prazo {
+.status-chip.no-prazo,
+.status-chip.plano-iniciado,
+.status-chip.concluida {
   background: #e6f4ee;
   color: #146b59;
 }

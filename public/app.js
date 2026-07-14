@@ -839,10 +839,10 @@ function renderGoalsList() {
         <div class="goal-item-grid">
           <div><span>Guardado</span><strong>${currency.format(goal.saved_amount || 0)}</strong></div>
           <div><span>Falta</span><strong>${currency.format(goal.remainingAmount || 0)}</strong></div>
-          <div><span>Necessário/mês</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div>
-          <div><span>Previsão</span><strong>${escapeHtml(goal.forecastConclusion || "-")}</strong></div>
+          <div><span>Aporte ideal</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div>
+          <div><span>Meses restantes</span><strong>${Number(goal.monthsRemaining || 0)}</strong></div>
         </div>
-        <small class="goal-item-status">${escapeHtml(goal.status || "Em andamento")} - ${currency.format(goal.saved_amount || 0)} guardados</small>
+        <small class="goal-item-status">${escapeHtml(goal.status || "Em andamento")} - ${escapeHtml(goal.statusDetail || "Acompanhe o ritmo mensal da meta.")}</small>
       </article>
     `).join("")}
     <button type="button" class="secondary" data-goal-new><i data-lucide="plus"></i><span>Criar outra meta</span></button>
@@ -874,17 +874,19 @@ function updateGoalLivePreview() {
   const labels = { leve: "Leve", equilibrado: "Equilibrado", intenso: "Agressivo" };
   const modeMonthly = remaining > 0 ? Math.max(monthly * (multipliers[intensity] || 1), 1) : 0;
   const modeMonths = modeMonthly > 0 && remaining > 0 ? Math.ceil(remaining / modeMonthly) : 0;
+  const monthStatus = modeMonths <= months ? "dentro do prazo" : `${modeMonths - months} mês(es) além do prazo`;
   const motivational = remaining === 0
     ? "Meta concluída. Excelente para apresentar o progresso!"
     : modeMonthly >= monthly
       ? `Com o modo ${labels[intensity]}, a previsão fica em ${modeMonths} mês(es).`
-      : `Modo ${labels[intensity]} reduz o impacto mensal, mas pode passar para ${modeMonths} mês(es).`;
-  goalLivePreview.innerHTML = `<span>${escapeHtml(goalName)}</span><span>Faltam <strong>${currency.format(remaining)}</strong></span><span>Necessário no prazo <strong>${currency.format(monthly)}</strong></span><span>Ritmo escolhido <strong>${currency.format(modeMonthly)}</strong></span><span>${escapeHtml(motivational)}</span>`;
+      : `Modo ${labels[intensity]} alivia o mês, mas pode levar ${modeMonths} mês(es).`;
+  goalLivePreview.innerHTML = `<span>${escapeHtml(goalName)}</span><span>Faltam <strong>${currency.format(remaining)}</strong></span><span>Aporte ideal <strong>${currency.format(monthly)}</strong></span><span>Ritmo escolhido <strong>${currency.format(modeMonthly)}</strong></span><span>Previsão <strong>${escapeHtml(monthStatus)}</strong></span><span>${escapeHtml(motivational)}</span>`;
   document.querySelector("#economyModes").innerHTML = ["leve", "equilibrado", "intenso"].map((mode) => {
     const amount = remaining > 0 ? Math.max(monthly * multipliers[mode], 1) : 0;
     const finish = amount > 0 ? Math.ceil(remaining / amount) : 0;
     const selected = mode === intensity ? " active" : "";
-    return `<article class="economy-mode${selected}"><span>${labels[mode]}</span><strong>${currency.format(amount)}</strong><small>por mês - conclusão estimada em ${finish} mês(es)</small></article>`;
+    const status = finish <= months ? "no prazo" : `+${finish - months} mês(es)`;
+    return `<article class="economy-mode${selected}"><span>${labels[mode]}</span><strong>${currency.format(amount)}</strong><small>por mês - ${status}</small></article>`;
   }).join("");
 }
 
@@ -966,7 +968,7 @@ function renderAssistantHub() {
     ? `A maior pressão está em ${top.category}, com ${top.share}% das despesas.`
     : "Ainda não há gastos suficientes para identificar um padrão principal.";
   const goalText = goal
-    ? `Para ${goal.goal_name}, guarde ${currency.format(goal.monthlyTarget)} por mês.`
+    ? `Para ${goal.goal_name}, guarde ${currency.format(goal.monthlyTarget)} por mês pelos próximos ${goal.monthsRemaining || goal.target_months} mês(es).`
     : "Cadastre uma meta para transformar a análise em um plano mensal.";
   const comparisonText = analysis.monthlyComparison?.hasPrevious ? `${analysis.monthlyComparison.summary} ` : "";
   summary.textContent = `${comparisonText}${balanceText} ${topText} ${goalText}`;
@@ -997,12 +999,12 @@ function renderDashboardGoalCard() {
   container.innerHTML = `
     <div class="goal-progress-ring" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong></div>
     <div class="goal-dashboard-info">
-      <span class="status-chip ${goal.status.toLowerCase().replace(/\s+/g, "-")}">${escapeHtml(goal.status)}</span>
+      <span class="status-chip ${goalStatusClass(goal.status)}">${escapeHtml(goal.status)}</span>
       <h4>${escapeHtml(goal.goal_name || objectiveLabel(goal.objective))}</h4>
-      <p>${currency.format(goal.saved_amount)} guardados de ${currency.format(goal.target_value)}. Faltam ${currency.format(goal.remainingAmount)}.</p>
+      <p>${escapeHtml(goal.statusDetail || `${currency.format(goal.saved_amount)} guardados de ${currency.format(goal.target_value)}.`)}</p>
       <div class="goal-dashboard-grid">
-        <div><span>Guardar este mês</span><strong>${currency.format(goal.monthlyTarget)}</strong></div>
-        <div><span>Modo ${escapeHtml(goal.modeLabel)}</span><strong>${currency.format(goal.modeMonthlyTarget)}</strong></div>
+        <div><span>Aporte ideal</span><strong>${currency.format(goal.monthlyTarget)}</strong></div>
+        <div><span>Prazo final</span><strong>${escapeHtml(goal.targetConclusion || goal.forecastConclusion || "-")}</strong></div>
       </div>
     </div>
   `;
@@ -1158,12 +1160,12 @@ function renderGoalPlanBlock(ai) {
     <div class="ai-section">
       <h3>Plano para atingir a meta</h3>
       <div class="goal-plan">
-        <div><span>Recomendado por mês</span><strong>${currency.format(goal?.monthlyTarget || 0)}</strong></div>
-        <div><span>Já guardado</span><strong>${currency.format(goal?.saved_amount || 0)}</strong></div>
-        <div><span>Falta</span><strong>${currency.format(goal?.remainingAmount || 0)}</strong></div>
-        <div><span>Previsão</span><strong>${escapeHtml(goal?.forecastConclusion || "-")}</strong></div>
+        <div><span>Aporte ideal agora</span><strong>${currency.format(goal?.monthlyTarget || 0)}</strong></div>
+        <div><span>Meses restantes</span><strong>${Number(goal?.monthsRemaining || 0)}</strong></div>
+        <div><span>Esperado hoje</span><strong>${currency.format(goal?.expectedSavedNow || 0)}</strong></div>
+        <div><span>Diferença do plano</span><strong class="${Number(goal?.paceDifference || 0) >= 0 ? "value-positive" : "value-negative"}">${currency.format(goal?.paceDifference || 0)}</strong></div>
       </div>
-      ${action ? `<p class="ai-action-text">${escapeHtml(action)}</p>` : ""}
+      <p class="ai-action-text">${escapeHtml(action || goal?.smartRecommendation || "Cadastre uma meta para receber um plano mensal.")}</p>
     </div>
   `;
 }
@@ -1191,11 +1193,11 @@ function renderGoalSummary() {
     <div><span>Valor total</span><strong>${currency.format(goal.target_value)}</strong></div>
     <div><span>Já guardado</span><strong>${currency.format(goal.saved_amount)}</strong></div>
     <div><span>Falta</span><strong>${currency.format(goal.remainingAmount)}</strong></div>
-    <div><span>Prazo</span><strong>${goal.target_months} meses</strong></div>
-    <div><span>Modo</span><strong>${escapeHtml(goal.modeLabel)}</strong></div>
-    <div><span>Necessário por mês</span><strong>${currency.format(goal.monthlyTarget)}</strong></div>
-    <div><span>Ritmo sugerido</span><strong>${currency.format(goal.modeMonthlyTarget || goal.monthlyTarget)}</strong></div>
-    <div><span>Previsão</span><strong>${escapeHtml(goal.forecastConclusion)}</strong></div>
+    <div><span>Prazo final</span><strong>${escapeHtml(goal.targetConclusion || "-")}</strong></div>
+    <div><span>Meses restantes</span><strong>${Number(goal.monthsRemaining || 0)}</strong></div>
+    <div><span>Aporte ideal agora</span><strong>${currency.format(goal.monthlyTarget)}</strong></div>
+    <div><span>Esperado hoje</span><strong>${currency.format(goal.expectedSavedNow || 0)}</strong></div>
+    <div><span>Diferença do plano</span><strong class="${Number(goal.paceDifference || 0) >= 0 ? "value-positive" : "value-negative"}">${currency.format(goal.paceDifference || 0)}</strong></div>
     <div><span>Status</span><strong class="${goal.feasible ? "value-positive" : "value-negative"}">${escapeHtml(goal.status)}</strong></div>
   `;
 }
@@ -1641,6 +1643,10 @@ function statusLabel(value) {
     Cancelada: "Cancelada",
   };
   return labels[value] || value;
+}
+
+function goalStatusClass(value) {
+  return normalizeText(value || "no prazo").replace(/\s+/g, "-") || "no-prazo";
 }
 
 function confidenceLabel(value) {
