@@ -7196,7 +7196,90 @@ table,
   background: rgba(31, 138, 95, .055);
 }
 
+/* Chart and goal management polish */
+.dashboard-active .finance-chart-card .dashboard-chart {
+  height: 276px;
+  min-height: 276px;
+}
+
+.dashboard-active .category-chart-card .dashboard-chart {
+  height: 244px;
+  min-height: 244px;
+}
+
+.dashboard-active .chart-wrap canvas {
+  max-width: 100%;
+}
+
+.app-view[data-page="relatorios"] .report-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  align-items: stretch;
+}
+
+.app-view[data-page="relatorios"] .chart-panel {
+  grid-column: span 6;
+  min-height: 410px !important;
+}
+
+.app-view[data-page="relatorios"] .chart-panel:nth-child(1),
+.app-view[data-page="relatorios"] .chart-panel:nth-child(3) {
+  grid-column: span 7;
+  min-height: 440px !important;
+}
+
+.app-view[data-page="relatorios"] .chart-panel:nth-child(2),
+.app-view[data-page="relatorios"] .chart-panel:nth-child(4) {
+  grid-column: span 5;
+  min-height: 440px !important;
+}
+
+.app-view[data-page="relatorios"] .chart-panel:nth-child(5),
+.app-view[data-page="relatorios"] .chart-panel:nth-child(6),
+.app-view[data-page="relatorios"] .chart-panel:nth-child(7) {
+  grid-column: span 4;
+  min-height: 430px !important;
+}
+
+.app-view[data-page="relatorios"] .chart-wrap {
+  min-height: 318px;
+}
+
+.app-view[data-page="relatorios"] .chart-panel:nth-child(4) .chart-wrap {
+  min-height: 300px;
+}
+
+.goal-item-head {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto !important;
+}
+
+.danger-icon-button {
+  border-color: rgba(192, 57, 43, .18) !important;
+  background: rgba(192, 57, 43, .07) !important;
+  color: var(--ft-critical) !important;
+}
+
+.danger-icon-button:hover {
+  border-color: rgba(192, 57, 43, .32) !important;
+  background: rgba(192, 57, 43, .12) !important;
+}
+
 @media (max-width: 900px) {
+  .app-view[data-page="relatorios"] .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app-view[data-page="relatorios"] .chart-panel,
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(1),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(2),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(3),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(4),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(5),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(6),
+  .app-view[data-page="relatorios"] .chart-panel:nth-child(7) {
+    grid-column: 1 / -1 !important;
+    min-height: 380px !important;
+  }
+
   .goal-summary {
     grid-template-columns: 1fr 1fr !important;
   }

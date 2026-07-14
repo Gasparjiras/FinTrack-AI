@@ -720,6 +720,7 @@ goalForm.addEventListener("input", updateGoalLivePreview);
 
 goalsList?.addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-goal-edit]");
+  const deleteButton = event.target.closest("[data-goal-delete]");
   const newButton = event.target.closest("[data-goal-new]");
   if (newButton) {
     resetGoalForm();
@@ -733,7 +734,27 @@ goalsList?.addEventListener("click", (event) => {
       goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
+  if (deleteButton) {
+    const goal = goals.find((item) => String(item.id) === String(deleteButton.dataset.goalDelete));
+    if (!goal) return;
+    const ok = confirm(`Excluir a meta "${goal.goal_name}"? Os lançamentos já registrados continuam no extrato.`);
+    if (!ok) return;
+    deleteGoal(goal.id);
+  }
 });
+
+async function deleteGoal(goalId) {
+  try {
+    await api(`/api/goal/${goalId}`, { method: "DELETE" });
+    if (String(editingGoalId) === String(goalId)) resetGoalForm();
+    toast("Meta excluída.");
+    await loadGoal();
+    await loadAnalysis(false);
+    showView("metas");
+  } catch (error) {
+    toast(error.message);
+  }
+}
 
 goalContributionForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -812,6 +833,7 @@ function renderGoalsList() {
           <span class="goal-item-icon"><i data-lucide="${goalIcon(goal.objective)}"></i></span><div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
           <span class="goal-item-percent">${goal.progressPercentage || 0}%</span>
           <button type="button" class="icon-button secondary" data-goal-edit="${goal.id}" title="Editar meta"><i data-lucide="pencil"></i></button>
+          <button type="button" class="icon-button danger-icon-button" data-goal-delete="${goal.id}" title="Excluir meta"><i data-lucide="trash-2"></i></button>
         </div>
         <div class="goal-mini-progress"><span style="width:${Math.min(goal.progressPercentage || 0, 100)}%"></span></div>
         <div class="goal-item-grid">
@@ -1209,6 +1231,35 @@ function chartCenterMoney(value) {
   return Math.abs(number) >= 10000 ? compactMoney(number) : currency.format(number);
 }
 
+function categoryChartItems(compact = false) {
+  const source = (analysis?.categories || [])
+    .map((item) => ({ ...item, total: Number(item.total || 0) }))
+    .filter((item) => item.total > 0)
+    .sort((a, b) => b.total - a.total);
+  const maxSlices = compact ? 5 : 7;
+  if (source.length <= maxSlices) return source;
+  const visible = source.slice(0, maxSlices - 1);
+  const grouped = source.slice(maxSlices - 1).reduce((sum, item) => sum + item.total, 0);
+  return grouped > 0 ? [...visible, { category: "Outros", total: grouped }] : visible;
+}
+
+function singleMonthFlowDataset() {
+  const balance = Number(analysis?.balance || 0);
+  return {
+    labels: ["Entradas", "Saídas", balance < 0 ? "Déficit" : "Saldo"],
+    data: [
+      Number(analysis?.totalIncome || 0),
+      Number(analysis?.totalExpenses || 0),
+      Math.abs(balance),
+    ],
+    colors: [
+      themeColors.emerald,
+      themeColors.critical,
+      balance < 0 ? themeColors.attention : themeColors.ai,
+    ],
+  };
+}
+
 function premiumLegend(dark = false) {
   return {
     display: true,
@@ -1246,9 +1297,9 @@ function premiumTooltip() {
 
 function renderCategoryChart(key, canvasId, compact) {
   const dark = isDarkDashboardChart(canvasId);
-  const items = analysis.categories || [];
+  const items = categoryChartItems(compact);
   if (!items.length || !items.some((item) => Number(item.total) > 0)) {
-    setChartEmpty(key, canvasId, "Sem dados suficientes para gerar o grafico.");
+    setChartEmpty(key, canvasId, "Sem dados suficientes para gerar o gráfico.");
     return;
   }
   setChartEmpty(key, canvasId, "");
@@ -1261,20 +1312,21 @@ function renderCategoryChart(key, canvasId, compact) {
         data: items.map((item) => item.total),
         backgroundColor: items.map((item) => categoryColor(item.category)),
         borderColor: dark ? "#292928" : "#FBFAF6",
-        borderWidth: compact ? 4 : 3,
-        borderRadius: compact ? 5 : 4,
-        spacing: 1,
-        hoverOffset: 5,
+        borderWidth: compact ? 5 : 4,
+        borderRadius: compact ? 8 : 7,
+        spacing: 2,
+        hoverOffset: 7,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: compact ? "74%" : "70%",
-      layout: { padding: compact ? 8 : 14 },
+      cutout: compact ? "72%" : "68%",
+      radius: compact ? "88%" : "86%",
+      layout: { padding: compact ? 4 : 10 },
       plugins: {
         legend: { display: false },
-        premiumCenterText: { label: "Total do mês", value: chartCenterMoney(total), valueSize: compact ? 16 : 17 },
+        premiumCenterText: { label: "Total do mês", value: chartCenterMoney(total), valueSize: compact ? 17 : 19 },
         tooltip: {
           ...premiumTooltip(),
           callbacks: {
@@ -1293,21 +1345,24 @@ function renderCategoryChart(key, canvasId, compact) {
 
 function renderFlowChart(key, canvasId) {
   if (!analysis || (analysis.totalIncome === 0 && analysis.totalExpenses === 0)) {
-    setChartEmpty(key, canvasId, "Sem dados suficientes para gerar o grafico.");
+    setChartEmpty(key, canvasId, "Sem dados suficientes para gerar o gráfico.");
     return;
   }
+  const flow = singleMonthFlowDataset();
   setChartEmpty(key, canvasId, "");
   createChart(key, canvasId, {
     type: "bar",
     data: {
-      labels: ["Entradas", "Saídas", "Saldo"],
+      labels: flow.labels,
       datasets: [{
         label: "Valor",
-        data: [analysis.totalIncome, analysis.totalExpenses, Math.max(analysis.balance, 0)],
-        backgroundColor: [themeColors.emerald, themeColors.critical, themeColors.ai],
-        borderRadius: 14,
+        data: flow.data,
+        backgroundColor: flow.colors,
+        borderRadius: 18,
         borderSkipped: false,
-        maxBarThickness: 58,
+        maxBarThickness: 66,
+        categoryPercentage: .72,
+        barPercentage: .7,
       }],
     },
     options: chartOptions({ tooltipLabel: "Valor" }),
@@ -1336,6 +1391,34 @@ function renderMonthlyChart(key, canvasId) {
     return;
   }
   setChartEmpty(key, canvasId, "");
+  const activeItems = items.filter((item) => Number(item.income || 0) > 0 || Number(item.expenses || 0) > 0);
+  if (activeItems.length <= 1) {
+    const flow = singleMonthFlowDataset();
+    createChart(key, canvasId, {
+      type: "bar",
+      data: {
+        labels: flow.labels,
+        datasets: [{
+          label: monthLabel(activeItems[0]?.month || analysis.selectedMonth || selectedAnalysisMonth),
+          data: flow.data,
+          backgroundColor: flow.colors,
+          borderRadius: 18,
+          borderSkipped: false,
+          maxBarThickness: canvasId.includes("dashboard") ? 72 : 62,
+          categoryPercentage: .74,
+          barPercentage: .72,
+        }],
+      },
+      options: {
+        ...chartOptions({ theme: dark ? "dark" : "light", tooltipLabel: "Valor" }),
+        plugins: {
+          ...chartOptions({ theme: dark ? "dark" : "light" }).plugins,
+          legend: { display: false },
+        },
+      },
+    });
+    return;
+  }
   createChart(key, canvasId, {
     type: "line",
     data: {
@@ -1366,16 +1449,26 @@ function renderGoalChart(key, canvasId) {
     type: "doughnut",
     data: {
       labels: ["Concluído", "Falta"],
-      datasets: [{ data: [progress, Math.max(100 - progress, 0)], backgroundColor: [themeColors.emerald, "#E2DED4"], borderColor: "#FBFAF6", borderWidth: 5, borderRadius: 10, spacing: 2, hoverOffset: 4 }],
+      datasets: [{
+        data: [Math.max(progress, progress > 0 ? 1 : 0), Math.max(100 - progress, 0)],
+        backgroundColor: [themeColors.emerald, "#E2DED4"],
+        borderColor: "#FBFAF6",
+        borderWidth: 6,
+        borderRadius: 18,
+        spacing: 4,
+        hoverOffset: 5,
+      }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: "76%",
+      cutout: "74%",
+      radius: "82%",
+      rotation: -90,
       layout: { padding: 12 },
       plugins: {
         legend: { display: false },
-        premiumCenterText: { label: "Progresso", value: `${progress}%` },
+        premiumCenterText: { label: "Concluído", value: `${progress}%`, valueSize: 24 },
         tooltip: premiumTooltip(),
       },
     },
@@ -1828,6 +1921,7 @@ function auditMessage(row) {
     PDF_STATEMENT_ANALYZED: "Extrato PDF analisado",
     STATEMENT_FILE_ANALYZED: "Arquivo de extrato analisado",
     FINANCIAL_GOAL_UPDATED: `Meta salva${details.goalName ? `: ${details.goalName}` : ""}`,
+    FINANCIAL_GOAL_DELETED: `Meta excluída${details.goalName ? `: ${details.goalName}` : ""}`,
     GOAL_CONTRIBUTION_CREATED: `Valor guardado na meta: ${currency.format(details.amount || 0)}`,
     AI_ANALYSIS_REQUESTED: "Análise financeira solicitada",
     DATA_EXPORTED: "Dados baixados pelo usuário",

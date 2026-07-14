@@ -2150,6 +2150,27 @@ async function handleApi(req, res) {
       return send(res, 200, { ok: true, id: savedGoalId });
     }
 
+    const goalMatch = url.pathname.match(/^\/api\/goal\/(\d+)$/);
+    if (goalMatch && req.method === "DELETE") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de excluir metas financeiras." });
+      const goalId = Number(goalMatch[1]);
+      const goal = db.prepare("SELECT id, goal_name FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+      if (!goal) return send(res, 404, { error: "Meta não encontrada." });
+      db.exec("BEGIN");
+      try {
+        db.prepare("DELETE FROM financial_goals WHERE id = ? AND user_id = ?").run(goal.id, user.id);
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+        audit(user.id, "FINANCIAL_GOAL_DELETED", { goalId: goal.id, goalName: goal.goal_name }, req);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return send(res, 200, { ok: true });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/goal/contribution") {
       const user = requireUser(req, res);
       if (!user) return;
