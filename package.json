@@ -1,0 +1,23 @@
+{
+  "name": "sistema-educacao-financeira-lgpd",
+  "version": "1.0.0",
+  "description": "Sistema de educacao financeira com consentimento LGPD, bcrypt, SQLite, auditoria e direitos do titular.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --check server.js && node --check ai-service.js && node --check public/app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "chart.js": "^4.5.1",
+    "lucide": "^1.23.0",
+    "openai": "^6.45.0",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  }
+}

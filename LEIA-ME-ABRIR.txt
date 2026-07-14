@@ -1,0 +1,24 @@
+COMO ABRIR
+
+1. De dois cliques em "Abrir EduFin.bat".
+2. O navegador deve abrir em http://localhost:3000.
+3. Se aparecer alerta do Windows, permita a execucao local.
+
+CHAVE DA OPENAI (OPCIONAL)
+
+1. Copie o arquivo ".env.example".
+2. Cole na mesma pasta com o nome ".env".
+3. Abra o arquivo ".env" e preencha:
+
+   OPENAI_API_KEY=sua_chave_aqui
+
+4. Feche e abra novamente o "Abrir EduFin.bat".
+
+Importante:
+- A chave fica somente no backend.
+- O frontend nao mostra a chave.
+- Se a chave nao existir, acabar o credito ou a API falhar, o app usa a analise local.
+
+Observacao:
+- Esta pasta ja inclui node_modules para nao precisar rodar npm install antes.
+- O banco fica em data/app.db e sera criado automaticamente no primeiro uso.

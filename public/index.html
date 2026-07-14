@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FinTrack AI</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="shortcut icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="page-bg" aria-hidden="true"></div>
+    <main class="shell">
+      <section class="auth-panel" id="authPanel">
+        <div class="brand-side">
+          <nav class="brand-mark" aria-label="Marca">
+            <span class="brand-icon brand-logo" aria-hidden="true"><svg viewBox="0 0 64 64" focusable="false"><rect width="64" height="64" rx="15"></rect><path d="M17 18H39V26H26V32H37V40H26V49H17V18Z"></path><path d="M40 18H50V26H45V49H36V26H31V18H40Z"></path></svg></span>
+            <span>FinTrack AI</span>
+          </nav>
+          <div class="hero-copy">
+            <p class="eyebrow">Educação financeira com IA</p>
+            <h1>Controle seus gastos com <span>clareza.</span></h1>
+            <p class="lead">Organize despesas, acompanhe metas e receba análises práticas em um painel simples e seguro.</p>
+            <div class="hero-actions">
+              <button data-auth-tab="register" type="button"><span>Criar conta</span><i data-lucide="arrow-right"></i></button>
+              <button class="secondary" data-auth-tab="login" type="button"><span>Entrar</span><i data-lucide="arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="auth-card">
+          <div class="tabs">
+            <button class="tab active" data-tab="register" type="button"><i data-lucide="user-plus"></i><span>Cadastrar</span></button>
+            <button class="tab" data-tab="login" type="button"><i data-lucide="lock-keyhole"></i><span>Entrar</span></button>
+          </div>
+
+          <form id="registerForm" class="form register-flow">
+            <div class="form-heading">
+              <p class="eyebrow">Nova conta</p>
+              <h2>Cadastro seguro</h2>
+            </div>
+
+            <div class="step-card">
+              <div class="step-title"><span>1</span><strong>Identificação mínima</strong></div>
+              <div class="field-grid">
+                <label>Nome completo<input name="name" autocomplete="name" minlength="3" required placeholder="Ex.: Ana Souza"></label>
+                <label>E-mail<input name="email" type="email" autocomplete="email" required placeholder="voce@email.com"></label>
+              </div>
+              <p class="hint">Usamos nome e e-mail somente para acesso e identificação da conta.</p>
+            </div>
+
+            <div class="step-card">
+              <div class="step-title"><span>2</span><strong>Senha</strong></div>
+              <div class="field-grid">
+                <label>Senha<input id="passwordInput" name="password" type="password" minlength="8" autocomplete="new-password" required placeholder="Crie uma senha"></label>
+                <label>Confirmar senha<input id="confirmPasswordInput" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="Repita sua senha"></label>
+              </div>
+              <div class="password-meter" aria-hidden="true"><span id="passwordBar"></span></div>
+              <ul class="password-rules" id="passwordRules">
+                <li data-rule="length">Mínimo 8 caracteres</li>
+                <li data-rule="number">Pelo menos 1 número</li>
+                <li data-rule="letter">Pelo menos 1 letra</li>
+                <li data-rule="match">Confirmação igual à senha</li>
+              </ul>
+              <p class="password-help">A barra fica totalmente verde quando todas as regras acima forem cumpridas.</p>
+            </div>
+
+            <div class="step-card consent-card">
+              <div class="step-title"><span>3</span><strong>Consentimento LGPD</strong></div>
+              <details class="terms-reader">
+                <summary>Ler termo LGPD</summary>
+                <div class="term-grid">
+                  <p><strong>Dados coletados</strong>Transações, nome, e-mail, preferências da meta e regras de categoria aprendidas.</p>
+                  <p><strong>Finalidade</strong>Processar o extrato, classificar transações e gerar um plano financeiro educativo.</p>
+                  <p><strong>Processamento externo</strong>Com a OpenAI ativa, apenas resumos financeiros são enviados a API; o PDF bruto é descartado.</p>
+                  <p><strong>Prazo</strong>Até a exclusão da conta ou solicitação do titular.</p>
+                </div>
+              </details>
+              <label class="check"><input name="consentAccepted" type="checkbox" required> Li e aceito antes de cadastrar ou importar transações financeiras.</label>
+            </div>
+
+            <button id="registerButton" type="submit"><i data-lucide="shield-check"></i><span>Criar minha conta</span></button>
+          </form>
+
+          <form id="loginForm" class="form hidden" hidden>
+            <div class="form-heading">
+              <p class="eyebrow">Acesso</p>
+              <h2>Entrar na conta</h2>
+            </div>
+            <label>E-mail<input name="email" type="email" autocomplete="email" required placeholder="voce@email.com"></label>
+            <label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label>
+            <button type="submit">Entrar</button>
+          </form>
+        </div>
+        <div class="home-benefits" aria-label="Recursos principais">
+          <article class="feature-card feature-dashboard">
+            <div class="feature-head">
+              <span class="feature-icon"><i data-lucide="layout-dashboard"></i></span>
+              <div>
+                <strong>Painel claro</strong>
+                <span>Centralize renda, gastos, metas e cartoes em um painel intuitivo.</span>
+              </div>
+            </div>
+            <div class="mini-dashboard" aria-hidden="true">
+              <div class="mini-sidebar"><span></span><span></span><span></span><span></span></div>
+              <div class="mini-window">
+                <div class="mini-window-top"><b>Dashboard</b><small>dados do usuário</small></div>
+                <div class="mini-chart"><span></span><span></span><span></span><span></span></div>
+                <div class="mini-row"><em></em><span></span><b></b></div>
+                <div class="mini-row"><em></em><span></span><b></b></div>
+              </div>
+              <div class="mini-bars">
+                <span style="width: 82%"></span>
+                <span style="width: 64%"></span>
+                <span style="width: 48%"></span>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature-card feature-ai">
+            <div class="feature-head">
+              <span class="feature-icon"><i data-lucide="sparkles"></i></span>
+              <div>
+                <strong>Análise com IA</strong>
+                <span>Dicas práticas observando padrões de consumo no mês.</span>
+              </div>
+            </div>
+            <div class="ai-preview" aria-hidden="true">
+              <div class="ai-bubble">A IA analisa os seus dados reais e transforma os gastos em próximas ações.</div>
+              <div class="ai-bot"><i data-lucide="bot"></i></div>
+            </div>
+          </article>
+
+          <article class="feature-card feature-privacy">
+            <div class="feature-head">
+              <span class="feature-icon"><i data-lucide="shield-check"></i></span>
+              <div>
+                <strong>Privacidade total</strong>
+                <span>Coleta mínima, segurança e controle dos dados pelo usuário.</span>
+              </div>
+            </div>
+            <div class="privacy-preview" aria-hidden="true">
+              <div class="privacy-lock"><i data-lucide="lock-keyhole"></i><b>Privacidade total</b></div>
+              <div class="security-list">
+                <span><i data-lucide="database"></i><b>Dados criptografados</b><small>Protecao local</small></span>
+                <span><i data-lucide="user-check"></i><b>Controle total</b><small>Correção e exclusão</small></span>
+                <span><i data-lucide="shield"></i><b>Seguranca bancaria</b><small>Acesso autenticado</small></span>
+                <span><i data-lucide="server-cog"></i><b>Auditoria segura</b><small>Registros tecnicos</small></span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="app hidden" id="appPanel" hidden>
+        <div class="dashboard-shell">
+          <aside class="sidebar">
+            <div class="sidebar-brand">
+              <span class="brand-icon brand-logo" aria-hidden="true"><svg viewBox="0 0 64 64" focusable="false"><rect width="64" height="64" rx="15"></rect><path d="M17 18H39V26H26V32H37V40H26V49H17V18Z"></path><path d="M40 18H50V26H45V49H36V26H31V18H40Z"></path></svg></span>
+              <div><strong>FinTrack AI</strong><span>Copiloto financeiro</span></div>
+            </div>
+            <nav class="side-nav" aria-label="Navegacao principal">
+              <button class="nav-item active" data-view="dashboard" type="button"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+              <button class="nav-item" data-view="gastos" type="button"><i data-lucide="landmark"></i><span>Lançamentos</span></button>
+              <button class="nav-item" data-view="categorias" type="button"><i data-lucide="tags"></i><span>Categorias</span></button>
+              <button class="nav-item" data-view="metas" type="button"><i data-lucide="target"></i><span>Metas</span></button>
+              <button class="nav-item" data-view="relatorios" type="button"><i data-lucide="chart-no-axes-combined"></i><span>Relatórios</span></button>
+              <button class="nav-item" data-view="ia" type="button"><i data-lucide="sparkles"></i><span>Análise com IA</span></button>
+              <button class="nav-item" data-view="configuracoes" type="button"><i data-lucide="settings"></i><span>Configurações</span></button>
+            </nav>
+            <div class="sidebar-user">
+              <div class="user-avatar">PG</div>
+              <div><strong id="sidebarUserName">Usuario</strong><span id="sidebarUserEmail">email</span></div>
+            </div>
+            <button id="logoutBtn" type="button" class="sidebar-logout"><i data-lucide="log-out"></i><span>Sair</span></button>
+          </aside>
+
+          <div class="workspace">
+            <header class="workspace-header">
+              <div>
+                <p class="eyebrow">Seu copiloto financeiro</p>
+                <h1 id="pageTitle">Dashboard</h1>
+              </div>
+              <div class="header-actions">
+                <span id="currentMonth" class="month-pill"></span>
+                <button id="quickExpenseBtn" type="button"><i data-lucide="plus"></i><span>Nova transação</span></button>
+              </div>
+            </header>
+
+            <main class="workspace-content">
+              <section class="app-view active" data-page="dashboard">
+                <div class="welcome-row">
+                  <div><h2 id="welcome">Olá</h2><p>Veja como está sua vida financeira neste mês.</p></div>
+                  <span class="status-pill"><i data-lucide="shield-check"></i> Dados protegidos</span>
+                </div>
+                <article class="assistant-hub dashboard-ai-strip">
+                  <div class="assistant-avatar"><i data-lucide="sparkles"></i></div>
+                  <div class="assistant-strip-copy">
+                    <span>FinTrack AI</span>
+                    <p id="assistantSummary">Cadastre renda, gastos e meta para eu encontrar padrões, alertas e oportunidades de economia.</p>
+                  </div>
+                  <div class="assistant-side">
+                    <div><span>Maior categoria</span><strong id="assistantTopCategory">Sem dados</strong></div>
+                    <div><span>Meta principal</span><strong id="assistantGoalHint">Cadastre uma meta</strong></div>
+                    <div><span>Leitura do mês</span><strong id="assistantMonthlyHint">Aguardando dados</strong></div>
+                  </div>
+                  <button data-go-view="ia" type="button"><i data-lucide="message-circle"></i><span>Ver análise completa</span></button>
+                </article>
+                <article id="starterPanel" class="starter-panel hidden" hidden>
+                  <div class="starter-copy">
+                    <p class="eyebrow">Primeiro uso</p>
+                    <h3>Seu painel ainda está vazio.</h3>
+                    <p>Importe um extrato CSV/Excel ou cadastre uma transação manual para começar a visualizar gráficos, metas e análises.</p>
+                    <div class="starter-benefits">
+                      <span><i data-lucide="file-spreadsheet"></i> Importação com prévia</span>
+                      <span><i data-lucide="plus-circle"></i> Cadastro manual</span>
+                      <span><i data-lucide="target"></i> Metas com dados reais</span>
+                    </div>
+                    <div class="starter-actions">
+                      <button data-go-view="gastos" type="button"><i data-lucide="upload"></i><span>Importar extrato</span></button>
+                      <button data-go-view="gastos" type="button" class="secondary"><i data-lucide="plus"></i><span>Cadastrar transação</span></button>
+                      <button data-go-view="metas" type="button" class="ghost-button"><i data-lucide="target"></i><span>Criar meta</span></button>
+                    </div>
+                  </div>
+                </article>
+                <div class="kpi-grid dashboard-kpis">
+                  <article class="kpi-card balance-card"><span>Saldo disponível</span><strong id="balance">R$ 0,00</strong><small>Após gastos</small></article>
+                  <article class="kpi-card expense-card"><span>Gastos do mês</span><strong id="expenses">R$ 0,00</strong><small>Saídas do período</small></article>
+                  <article class="kpi-card saved-card"><span>Guardado para metas</span><strong id="savedGoalKpi">R$ 0,00</strong><small id="savedGoalDetail">Sem meta ativa</small></article>
+                  <article class="kpi-card progress-card"><span>Progresso da meta</span><strong id="goalProgressKpi">0%</strong><small id="goalProgressDetail">Cadastre uma meta</small></article>
+                </div>
+                <div class="dashboard-grid finance-board">
+                  <article class="panel panel-wide finance-chart-card"><div class="panel-head"><div><h3>Entradas x saídas</h3><p>Fluxo do período</p></div></div><div class="chart-wrap dashboard-chart"><canvas id="dashboardMonthlyChart"></canvas></div></article>
+                  <article class="panel category-chart-card"><div class="panel-head"><div><h3>Gastos por categoria</h3><p>Distribuição do mês</p></div></div><div class="chart-wrap dashboard-chart"><canvas id="dashboardCategoryChart"></canvas></div><div id="dashboardRanking" class="ranking-list compact dashboard-donut-legend"></div></article>
+                  <article class="panel panel-wide budget-board"><div class="panel-head"><div><h3>Orçamento por categoria</h3><p>Limite planejado x gasto real</p></div><button class="icon-button" data-go-view="categorias" type="button" title="Abrir categorias"><i data-lucide="arrow-up-right"></i></button></div><div id="dashboardBudgets" class="budget-list"></div></article>
+                </div>
+                <div class="dashboard-secondary-grid">
+                  <article class="panel main-goal-card"><div class="panel-head"><div><h3>Minha meta principal</h3><p>Progresso e valor sugerido</p></div><button class="icon-button" data-go-view="metas" type="button" title="Abrir metas"><i data-lucide="arrow-up-right"></i></button></div><div id="dashboardGoalCard" class="goal-dashboard-empty">Cadastre uma meta para acompanhar o progresso.</div></article>
+                  <article class="panel dashboard-extra-metrics"><div><span>Renda do mês</span><strong id="income">R$ 0,00</strong></div><div><span>Economia sugerida</span><strong id="suggestedSavingsKpi">R$ 0,00</strong></div></article>
+                  <article class="panel recent-panel"><div class="panel-head"><div><h3>Últimos lançamentos</h3><p>Movimentações recentes</p></div><button class="icon-button" data-go-view="gastos" type="button" title="Abrir gastos"><i data-lucide="arrow-up-right"></i></button></div><div id="recentTransactions" class="recent-list"></div></article>
+                </div>
+              </section>
+
+              <section class="app-view" data-page="gastos" hidden>
+                <div class="page-intro"><div><h2>Lançamentos</h2><p>Cadastre transações reais ou importe um extrato CSV/Excel. Nada é salvo antes da sua confirmação.</p></div></div>
+                <article class="panel import-panel">
+                  <div class="panel-head">
+                    <div><h3>Importar extrato</h3><p>Prioridade para CSV, XLSX e XLS. PDF continua disponível como recurso secundário.</p></div>
+                  </div>
+                  <form id="statementImportForm" class="pdf-inline">
+                    <label class="file-drop">
+                      <input name="statement" type="file" accept=".csv,.xlsx,.xls,.pdf,text/csv,application/pdf" required>
+                      <strong>Selecionar arquivo</strong>
+                      <span>CSV, Excel ou PDF. O sistema mostra uma prévia antes de salvar.</span>
+                    </label>
+                    <button type="submit"><i data-lucide="upload"></i><span>Ler arquivo</span></button>
+                  </form>
+                </article>
+                <article id="importMappingCard" class="panel hidden" hidden>
+                  <div class="panel-head"><div><h3>Mapeamento de colunas</h3><p>Confirme quais colunas representam data, descrição, valor e categoria.</p></div><button id="buildImportPreviewBtn" type="button">Gerar prévia</button></div>
+                  <div id="importMappingFields" class="mapping-grid"></div>
+                  <div id="importStats" class="import-stats"></div>
+                </article>
+                <div class="content-grid">
+                  <form id="transactionForm" class="panel form-panel">
+                    <div class="panel-head"><div><h3 id="formTitle">Lançamento manual</h3><p>Registre renda, gastos, forma de pagamento e categoria.</p></div></div>
+                    <input type="hidden" name="id">
+                    <label>Descrição<input name="description" maxlength="120" required placeholder="Ex.: Salário, mercado, aluguel"></label>
+                    <div id="categorySuggestion" class="category-suggestion hidden" hidden><i data-lucide="wand-sparkles"></i><span></span></div>
+                    <div class="field-grid">
+                      <label>Tipo<select name="type" required><option value="saida" selected>Gasto</option><option value="entrada">Entrada</option></select></label>
+                      <label>Valor<input name="value" type="number" min="0.01" step="0.01" required placeholder="Ex.: 80.00"></label>
+                      <label>Data<input name="date" type="date" required></label>
+                    </div>
+                    <div class="field-grid">
+                      <label>Forma de pagamento<input name="paymentMethod" maxlength="50" placeholder="Cartao, PIX, boleto"></label>
+                      <label>Status<select name="status"><option value="Concluida">Concluída</option><option value="Pendente">Pendente</option><option value="Agendada">Agendada</option><option value="Cancelada">Cancelada</option></select></label>
+                    </div>
+                    <label>Categoria<select name="category" required><option value="">Selecione</option></select></label>
+                    <div class="actions"><button type="submit"><i data-lucide="save"></i><span>Salvar</span></button><button id="cancelEditBtn" type="button" class="secondary hidden" hidden>Cancelar</button></div>
+                  </form>
+                  <article class="panel insight-panel"><div class="panel-head"><div><h3>Resumo do mês</h3><p>Controle rápido</p></div></div><div class="mini-stats"><div><span>Maior gasto</span><strong id="largestExpense">R$ 0,00</strong></div><div><span>Categoria principal</span><strong id="topCategory">Sem dados</strong></div><div><span>Total de lançamentos</span><strong id="transactionCount">0</strong></div></div></article>
+                </div>
+                <article class="panel table-panel">
+                  <div class="panel-head"><div><h3>Lançamentos da conta</h3><p>Dados cadastrados manualmente ou confirmados em importações.</p></div></div>
+                  <div class="transaction-toolbar">
+                    <label class="search-field"><i data-lucide="search"></i><input id="transactionSearch" type="search" placeholder="Buscar por descrição, categoria ou forma"></label>
+                    <label>Tipo<select id="transactionTypeFilter"><option value="">Todos</option><option value="entrada">Entradas</option><option value="saida">Gastos</option></select></label>
+                    <label>Categoria<select id="transactionCategoryFilter"><option value="">Todas</option></select></label>
+                    <label>Mês<input id="transactionMonthFilter" type="month"></label>
+                  </div>
+                  <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Forma</th><th>Status</th><th>Origem</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="transactionsBody"></tbody></table></div>
+                  <div class="pagination-bar"><button id="prevTransactionsPage" type="button" class="secondary">Anterior</button><span id="transactionsPageInfo">Página 1 de 1</span><button id="nextTransactionsPage" type="button" class="secondary">Próxima</button></div>
+                </article>
+                <article id="importPreviewCard" class="panel hidden" hidden><div class="panel-head"><div><h3>Prévia da importação</h3><p id="importNotice"></p></div><button id="confirmImportBtn" type="button">Confirmar importação</button></div><div class="table-wrap"><table><thead><tr><th>Importar</th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Confiança</th><th>Status</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div></article>
+              </section>
+
+              <section class="app-view" data-page="categorias" hidden>
+                <div class="page-intro"><div><h2>Categorias e limites</h2><p>Planeje quanto pode gastar e acompanhe o realizado.</p></div></div>
+                <div class="content-grid category-layout">
+                  <form id="categoryForm" class="panel form-panel"><div class="panel-head"><div><h3 id="categoryFormTitle">Nova categoria</h3><p>Defina um teto mensal.</p></div></div><input type="hidden" name="id"><label>Nome<input name="name" maxlength="40" required placeholder="Ex.: Pet, academia"></label><div class="field-grid"><label>Limite mensal<input name="monthlyLimit" type="number" min="0" step="0.01" required placeholder="500.00"></label><label>Cor<input name="color" type="color" value="#285e8e" required></label></div><div class="actions"><button type="submit">Salvar categoria</button><button id="cancelCategoryBtn" type="button" class="secondary hidden" hidden>Cancelar</button></div></form>
+                  <article class="panel"><div class="panel-head"><div><h3>Planejado x realizado</h3><p>Comparação do mês</p></div></div><div class="chart-wrap"><canvas id="budgetChart"></canvas></div></article>
+                </div>
+                <div id="categoriesGrid" class="category-grid"></div>
+              </section>
+
+              <section class="app-view" data-page="metas" hidden>
+                <div class="page-intro"><div><h2>Meta financeira</h2><p>O sistema trabalha com uma meta principal por vez. Registre aportes mensais nela.</p></div></div>
+                <div class="content-grid">
+                  <form id="goalForm" class="panel form-panel"><div class="panel-head"><div><h3>Minha meta principal</h3><p>Informe valor, prazo, guardado e ritmo.</p></div></div><label>Nome da meta<input name="goalName" maxlength="80" required placeholder="Ex.: Comprar notebook"></label><label>Objetivo<select name="objective" required><option value="">Selecione</option><option value="reserva">Reserva de emergência</option><option value="dividas">Quitar dívidas</option><option value="viagem">Fazer uma viagem</option><option value="compra">Realizar uma compra</option><option value="investimento">Começar a investir</option><option value="outro">Outro objetivo</option></select></label><div class="field-grid"><label>Valor total da meta<input name="targetValue" type="number" min="1" step="0.01" required placeholder="3000.00"></label><label>Já guardado<input name="savedAmount" type="number" min="0" step="0.01" value="0" required placeholder="800.00"></label></div><div class="field-grid"><label>Prazo em meses<input name="targetMonths" type="number" min="1" max="120" required placeholder="12"></label><label>Guardar por mês<input name="plannedMonthlySavings" type="number" min="0" step="0.01" placeholder="300.00"></label></div><label>Modo de economia<select name="intensity" required><option value="leve">Leve</option><option value="equilibrado" selected>Equilibrado</option><option value="intenso">Agressivo</option></select></label><div id="goalLivePreview" class="goal-live-preview">Preencha a meta para calcular quanto falta.</div><div id="economyModes" class="economy-modes"></div><button type="submit">Salvar meta</button></form>
+                  <div class="goal-side-stack">
+                    <article class="panel goal-overview"><div class="panel-head"><div><h3>Progresso da meta</h3><p>Guardado, falta e previsão</p></div></div><div id="goalSummary" class="goal-summary-empty">Cadastre uma meta para ver o planejamento.</div><div class="chart-wrap"><canvas id="goalProgressChart"></canvas></div></article>
+                    <form id="goalContributionForm" class="panel goal-contribution-card"><div class="panel-head"><div><h3>Guardar este mês</h3><p>Registre um aporte na meta principal. Ele aparecerá em Lançamentos.</p></div></div><div class="field-grid"><label>Valor guardado<input name="amount" type="number" min="0.01" step="0.01" required placeholder="Ex.: 250.00"></label><label>Data<input name="date" type="date" required></label></div><label>Descrição opcional<input name="note" maxlength="80" placeholder="Ex.: Aporte da meta de julho"></label><button type="submit"><i data-lucide="piggy-bank"></i><span>Adicionar na meta</span></button></form>
+                  </div>
+                </div>
+              </section>
+
+              <section class="app-view" data-page="relatorios" hidden>
+                <div class="page-intro"><div><h2>Relatórios</h2><p>Visualize e exporte seus dados financeiros.</p></div><div class="page-actions"><button id="exportReportCsvBtn" type="button" class="secondary"><i data-lucide="file-spreadsheet"></i><span>Exportar CSV</span></button><button id="exportBtn" type="button"><i data-lucide="download"></i><span>Baixar JSON</span></button></div></div>
+                <div class="chart-grid report-grid"><article class="chart-panel"><h3>Gastos por categoria</h3><div class="chart-wrap"><canvas id="categoryChart"></canvas></div></article><article class="chart-panel"><h3>Entradas x saídas</h3><div class="chart-wrap"><canvas id="flowChart"></canvas></div></article><article class="chart-panel"><h3>Evolução mensal</h3><div class="chart-wrap"><canvas id="monthlyChart"></canvas></div></article><article class="chart-panel"><h3>Progresso da meta</h3><div class="chart-wrap"><canvas id="goalChart"></canvas></div></article><article class="chart-panel"><h3>Planejado x gasto real</h3><div class="chart-wrap"><canvas id="budgetComparisonChart"></canvas></div></article><article class="chart-panel"><h3>Economia sugerida</h3><div class="chart-wrap"><canvas id="savingsChart"></canvas></div></article><article class="chart-panel ranking-panel"><h3>Ranking de categorias</h3><div id="categoryRanking" class="ranking-list"></div></article></div>
+              </section>
+
+              <section class="app-view" data-page="ia" hidden>
+                <div class="page-intro"><div><h2>Análise com IA</h2><p>A OpenAI só será chamada quando você clicar no botão.</p></div><span id="aiProvider" class="provider-badge">Verificando IA...</span></div>
+                <article class="ai-hero-panel"><div><p class="eyebrow">Consultor financeiro</p><h3>Transforme seus dados em um plano prático</h3><p>Consideramos renda, gastos, limites por categoria, meta e prazo.</p></div><button id="analyzeBtn" type="button"><i data-lucide="sparkles"></i><span>Analisar gastos</span></button></article>
+                <div class="kpi-grid compact"><article class="kpi-card"><span>Entradas</span><strong id="aiIncome">R$ 0,00</strong></article><article class="kpi-card"><span>Saídas</span><strong id="aiExpenses">R$ 0,00</strong></article><article class="kpi-card"><span>Saldo</span><strong id="aiBalance">R$ 0,00</strong></article><article class="kpi-card"><span>Maior categoria</span><strong id="aiTopCategory">Sem dados</strong></article></div>
+                <article class="panel ai-report"><div id="aiResult" class="ai-result"><div class="empty-state"><i data-lucide="sparkles"></i><h3>Pronto para analisar</h3><p>Clique em "Analisar gastos" para gerar dicas. Se a OpenAI não estiver configurada, usamos a análise local.</p></div></div></article>
+              </section>
+
+              <section class="app-view" data-page="configuracoes" hidden>
+                <div class="page-intro"><div><h2>Configurações</h2><p>Privacidade, dados e conta.</p></div></div>
+                <div class="content-grid">
+                  <article class="panel"><div class="panel-head"><div><h3>Direitos do titular</h3><p>Controle completo dos seus dados.</p></div></div><div class="rights-list"><span>Visualizar e corrigir dados</span><span>Baixar arquivo JSON</span><span>Revogar consentimento</span><span>Excluir conta e registros</span></div><button id="settingsExportBtn" type="button" class="secondary">Baixar meus dados</button></article>
+                  <article class="panel consent-settings"><div class="panel-head"><div><h3>Consentimento e dados</h3><p>Gerencie o aceite LGPD sem apagar sua conta.</p></div></div><p>Ao revogar o consentimento, transações, metas, importações e análises de IA são removidas. Sua conta permanece ativa, mas o painel financeiro fica bloqueado até novo aceite.</p><div class="actions"><button id="acceptConsentBtn" type="button" class="secondary">Aceitar termos novamente</button><button id="revokeConsentBtn" type="button" class="danger-button">Revogar consentimento e limpar dados</button></div></article>
+                  <article class="panel"><div class="panel-head"><div><h3>Minha atividade</h3><p>Acoes registradas para transparencia.</p></div></div><ul id="auditList" class="audit compact-audit"></ul></article>
+                </div>
+                <form id="deleteAccountForm" class="panel danger"><div class="panel-head"><div><h3>Excluir conta</h3><p>Remove conta, metas, categorias e lançamentos.</p></div></div><label>Confirme sua senha<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">Excluir tudo</button></form>
+              </section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <p id="message" class="message"></p>
+    </main>
+    <script src="vendor/chart.umd.js"></script>
+    <script src="vendor/lucide.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
