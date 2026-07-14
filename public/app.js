@@ -755,7 +755,7 @@ function fillGoalForm(goal) {
   goalForm.elements.objective.value = goal?.objective || "";
   goalForm.elements.targetValue.value = goal?.target_value || "";
   goalForm.elements.savedAmount.value = goal?.saved_amount || 0;
-  goalForm.elements.plannedMonthlySavings.value = goal?.planned_monthly_savings || "";
+  goalForm.elements.plannedMonthlySavings.value = "";
   goalForm.elements.targetMonths.value = goal?.target_months || "";
   goalForm.elements.intensity.value = goal?.intensity || "equilibrado";
   const title = goalForm.querySelector(".panel-head h3");
@@ -814,7 +814,6 @@ function updateGoalLivePreview() {
   const target = Number(goalForm.elements.targetValue.value || 0);
   const saved = Number(goalForm.elements.savedAmount.value || 0);
   const months = Number(goalForm.elements.targetMonths.value || 0);
-  const planned = Number(goalForm.elements.plannedMonthlySavings.value || 0);
   const intensity = goalForm.elements.intensity.value || "equilibrado";
   if (!target || !months) {
     goalLivePreview.textContent = "Preencha a meta para calcular quanto falta.";
@@ -826,15 +825,13 @@ function updateGoalLivePreview() {
   const multipliers = { leve: 0.75, equilibrado: 1, intenso: 1.35 };
   const labels = { leve: "Leve", equilibrado: "Equilibrado", intenso: "Agressivo" };
   const modeMonthly = remaining > 0 ? Math.max(monthly * (multipliers[intensity] || 1), 1) : 0;
-  const plannedMonths = planned > 0 && remaining > 0 ? Math.ceil(remaining / planned) : null;
+  const modeMonths = modeMonthly > 0 && remaining > 0 ? Math.ceil(remaining / modeMonthly) : 0;
   const motivational = remaining === 0
     ? "Meta concluída. Excelente para apresentar o progresso!"
-    : planned > 0 && planned >= monthly
-      ? "Você está no ritmo para cumprir o prazo."
-      : planned > 0
-        ? `Com esse ritmo, a previsão fica em ${plannedMonths} meses.`
-        : "Informe quanto pretende guardar por mês para comparar com o prazo.";
-  goalLivePreview.innerHTML = `<span>${escapeHtml(goalName)}</span><span>Faltam <strong>${currency.format(remaining)}</strong></span><span>Necessário por mês <strong>${currency.format(monthly)}</strong></span><span>Planejado <strong>${currency.format(planned || 0)}</strong></span><span>${escapeHtml(motivational)}</span>`;
+    : modeMonthly >= monthly
+      ? `Com o modo ${labels[intensity]}, a previsão fica em ${modeMonths} mês(es).`
+      : `Modo ${labels[intensity]} reduz o impacto mensal, mas pode passar para ${modeMonths} mês(es).`;
+  goalLivePreview.innerHTML = `<span>${escapeHtml(goalName)}</span><span>Faltam <strong>${currency.format(remaining)}</strong></span><span>Necessário no prazo <strong>${currency.format(monthly)}</strong></span><span>Ritmo escolhido <strong>${currency.format(modeMonthly)}</strong></span><span>${escapeHtml(motivational)}</span>`;
   document.querySelector("#economyModes").innerHTML = ["leve", "equilibrado", "intenso"].map((mode) => {
     const amount = remaining > 0 ? Math.max(monthly * multipliers[mode], 1) : 0;
     const finish = amount > 0 ? Math.ceil(remaining / amount) : 0;
@@ -1048,7 +1045,7 @@ function renderGoalPlanBlock(ai) {
     <div class="ai-section">
       <h3>Plano para atingir a meta</h3>
       <div class="goal-plan">
-        <div><span>Guardar por mês</span><strong>${currency.format(goal?.monthlyTarget || 0)}</strong></div>
+        <div><span>Recomendado por mês</span><strong>${currency.format(goal?.monthlyTarget || 0)}</strong></div>
         <div><span>Já guardado</span><strong>${currency.format(goal?.saved_amount || 0)}</strong></div>
         <div><span>Falta</span><strong>${currency.format(goal?.remainingAmount || 0)}</strong></div>
         <div><span>Previsão</span><strong>${escapeHtml(goal?.forecastConclusion || "-")}</strong></div>
@@ -1084,7 +1081,7 @@ function renderGoalSummary() {
     <div><span>Prazo</span><strong>${goal.target_months} meses</strong></div>
     <div><span>Modo</span><strong>${escapeHtml(goal.modeLabel)}</strong></div>
     <div><span>Necessário por mês</span><strong>${currency.format(goal.monthlyTarget)}</strong></div>
-    <div><span>Planejado por mês</span><strong>${currency.format(goal.planned_monthly_savings || 0)}</strong></div>
+    <div><span>Ritmo sugerido</span><strong>${currency.format(goal.modeMonthlyTarget || goal.monthlyTarget)}</strong></div>
     <div><span>Previsão</span><strong>${escapeHtml(goal.forecastConclusion)}</strong></div>
     <div><span>Status</span><strong class="${goal.feasible ? "value-positive" : "value-negative"}">${escapeHtml(goal.status)}</strong></div>
   `;

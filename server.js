@@ -1122,11 +1122,11 @@ function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
   const remainingAmount = Math.max(targetValue - savedAmount, 0);
   const targetMonths = Math.max(Number(goal.target_months || 1), 1);
   const monthlyTarget = remainingAmount / targetMonths;
-  const plannedMonthlySavings = Math.max(Number(goal.planned_monthly_savings || 0), 0);
   const modeMultipliers = { leve: 0.75, equilibrado: 1, intenso: 1.35 };
   const modeLabels = { leve: "Leve", equilibrado: "Equilibrado", intenso: "Agressivo" };
   const modeMultiplier = modeMultipliers[goal.intensity] || 1;
   const modeMonthlyTarget = remainingAmount > 0 ? Math.max(monthlyTarget * modeMultiplier, 1) : 0;
+  const plannedMonthlySavings = modeMonthlyTarget;
   const forecastMonths = remainingAmount === 0 ? 0 : Math.ceil(remainingAmount / modeMonthlyTarget);
   const plannedForecastMonths = plannedMonthlySavings > 0 && remainingAmount > 0 ? Math.ceil(remainingAmount / plannedMonthlySavings) : null;
   const available = Math.max(monthlyBalance, 0);
@@ -1215,8 +1215,11 @@ function goalPreview(goal) {
   const savedAmount = Math.min(Math.max(Number(goal.saved_amount || 0), 0), targetValue);
   const remainingAmount = Math.max(targetValue - savedAmount, 0);
   const targetMonths = Math.max(Number(goal.target_months || 1), 1);
-  const plannedMonthlySavings = Math.max(Number(goal.planned_monthly_savings || 0), 0);
   const monthlyTarget = remainingAmount / targetMonths;
+  const modeMultipliers = { leve: 0.75, equilibrado: 1, intenso: 1.35 };
+  const modeMultiplier = modeMultipliers[goal.intensity] || 1;
+  const modeMonthlyTarget = remainingAmount > 0 ? Math.max(monthlyTarget * modeMultiplier, 1) : 0;
+  const plannedMonthlySavings = modeMonthlyTarget;
   const progressPercentage = targetValue > 0 ? Math.min(Math.round((savedAmount / targetValue) * 100), 100) : 0;
   const forecastMonths = remainingAmount === 0
     ? 0
@@ -1225,11 +1228,9 @@ function goalPreview(goal) {
       : targetMonths;
   const status = remainingAmount === 0
     ? "Concluída"
-    : plannedMonthlySavings >= monthlyTarget
+    : forecastMonths <= targetMonths
       ? "No prazo"
-      : plannedMonthlySavings > 0
-        ? "Ajustar ritmo"
-        : "Sem aporte definido";
+      : "Prazo estendido";
   return {
     ...goal,
     target_value: targetValue,
@@ -1239,6 +1240,7 @@ function goalPreview(goal) {
     remainingAmount,
     progressPercentage,
     monthlyTarget,
+    modeMonthlyTarget,
     forecastMonths,
     forecastConclusion: addMonthsLabel(forecastMonths),
     status,
@@ -1980,7 +1982,6 @@ async function handleApi(req, res) {
       const objective = String(body.objective || "").trim();
       const targetValue = Number(body.targetValue);
       const savedAmount = Number(body.savedAmount || 0);
-      const plannedMonthlySavings = Number(body.plannedMonthlySavings || body.planned_monthly_savings || 0);
       const targetMonths = Number(body.targetMonths);
       const intensity = String(body.intensity || "").trim();
       if (goalName.length < 3 || goalName.length > 80) return send(res, 400, { error: "Informe um nome de meta com 3 a 80 caracteres." });
@@ -1989,10 +1990,13 @@ async function handleApi(req, res) {
       }
       if (!Number.isFinite(targetValue) || targetValue <= 0) return send(res, 400, { error: "Informe um valor de meta maior que zero." });
       if (!Number.isFinite(savedAmount) || savedAmount < 0) return send(res, 400, { error: "Informe quanto ja foi guardado com valor zero ou maior." });
-      if (!Number.isFinite(plannedMonthlySavings) || plannedMonthlySavings < 0) return send(res, 400, { error: "Informe quanto pretende guardar por mês com valor zero ou maior." });
       if (savedAmount > targetValue) return send(res, 400, { error: "O valor já guardado não pode ser maior que a meta." });
       if (!Number.isInteger(targetMonths) || targetMonths < 1 || targetMonths > 120) return send(res, 400, { error: "O prazo deve ter entre 1 e 120 meses." });
       if (!["leve", "equilibrado", "intenso"].includes(intensity)) return send(res, 400, { error: "Selecione um ritmo válido." });
+      const modeMultipliers = { leve: 0.75, equilibrado: 1, intenso: 1.35 };
+      const remainingForPlan = Math.max(targetValue - savedAmount, 0);
+      const baseMonthlyPlan = remainingForPlan / targetMonths;
+      const plannedMonthlySavings = remainingForPlan > 0 ? Number(Math.max(baseMonthlyPlan * (modeMultipliers[intensity] || 1), 1).toFixed(2)) : 0;
       let savedGoalId = goalId;
       if (goalId > 0) {
         const existing = db.prepare("SELECT id FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
