@@ -515,10 +515,14 @@ function renderCategoryCards() {
       : "A IA sugerirá um valor quando houver gastos nesta categoria.";
     return `
       <article class="category-card status-${statusKey}">
-        <div class="category-card-head"><span class="category-color" style="background:${item.color}"></span><div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(status)}</p></div><span class="category-status">${statusLabels[statusKey]}</span><div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div></div>
-        <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `sugestão ${currency.format(recommended)}/mês` : "aguardando dados"}</span></div>
+        <div class="category-card-head">
+          <span class="category-card-icon" style="--category-color:${item.color}"><i data-lucide="${categoryIcon(item.name)}"></i></span>
+          <div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(status)}</p></div>
+          <div class="row-actions"><button class="icon-button secondary" data-category-edit="${item.id}" type="button" title="Editar"><i data-lucide="pencil"></i></button>${!["Outros", "Receita", "Metas"].includes(item.name) ? `<button class="icon-button delete-button" data-category-delete="${item.id}" type="button" title="Excluir"><i data-lucide="trash-2"></i></button>` : ""}</div>
+        </div>
+        <div class="category-numbers"><strong>${currency.format(spent)}</strong><span>${recommended > 0 ? `Sugestão ${currency.format(recommended)}/mês` : "Aguardando dados"}</span></div>
         <div class="progress-track"><span style="width:${width}%;background:${statusKey === "neutro" ? item.color : budgetStatusColor(statusKey)}"></span></div>
-        <small>${recommended > 0 ? `${percentage}% da sugestão mensal` : "Cadastre lançamentos para receber uma sugestão"}</small>
+        <div class="category-card-foot"><span class="category-status">${statusLabels[statusKey]}</span><small>${recommended > 0 ? `${percentage}% da sugestão mensal` : "Cadastre lançamentos para receber uma sugestão"}</small></div>
       </article>
     `;
   }).join("");
@@ -757,6 +761,7 @@ function renderGoalsList() {
       <article class="goal-item-card">
         <div class="goal-item-head">
           <span class="goal-item-icon"><i data-lucide="${goalIcon(goal.objective)}"></i></span><div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
+          <span class="goal-item-percent">${goal.progressPercentage || 0}%</span>
           <button type="button" class="icon-button secondary" data-goal-edit="${goal.id}" title="Editar meta"><i data-lucide="pencil"></i></button>
         </div>
         <div class="goal-mini-progress"><span style="width:${Math.min(goal.progressPercentage || 0, 100)}%"></span></div>
@@ -766,7 +771,7 @@ function renderGoalsList() {
           <div><span>Necessário/mês</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div>
           <div><span>Previsão</span><strong>${escapeHtml(goal.forecastConclusion || "-")}</strong></div>
         </div>
-        <small>${goal.progressPercentage || 0}% concluído - ${escapeHtml(goal.status || "Em andamento")}</small>
+        <small class="goal-item-status">${escapeHtml(goal.status || "Em andamento")} - ${currency.format(goal.saved_amount || 0)} guardados</small>
       </article>
     `).join("")}
     <button type="button" class="secondary" data-goal-new><i data-lucide="plus"></i><span>Criar outra meta</span></button>
