@@ -125,6 +125,20 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS goal_contributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    goal_id INTEGER NOT NULL,
+    transaction_id INTEGER,
+    amount REAL NOT NULL,
+    contribution_date TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (goal_id) REFERENCES financial_goals(id) ON DELETE CASCADE,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+  );
+
   CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -645,6 +659,11 @@ function rowToImportCandidate(row, mapping, learnedRules = []) {
   }
   const rawCategory = canonicalCategory(valueFromMappedRow(row, mapping, "category"));
   const classification = rawCategory ? { category: rawCategory, confidence: "manual" } : categorize(description, learnedRules);
+  if (value !== null && value > 0) {
+    const inferredType = inferImportedType(description, rawType, classification.category);
+    if (inferredType === "saida") value = -Math.abs(value);
+    if (inferredType === "entrada") value = Math.abs(value);
+  }
   return {
     description: description.slice(0, 120),
     value,
@@ -932,6 +951,18 @@ function categorize(description, learnedRules = []) {
 
 function transactionType(value) {
   return Number(value) >= 0 ? "entrada" : "saida";
+}
+
+function inferImportedType(description, rawType = "", category = "") {
+  const combined = `${normalizeDescription(description)} ${normalizeDescription(rawType)} ${normalizeDescription(category)}`;
+  if (/\b(salario|receita|entrada|credito recebido|pix recebido|deposito|estorno|reembolso|provento|rendimento|transferencia recebida)\b/.test(combined)) {
+    return "entrada";
+  }
+  if (/\b(saida|debito|despesa|pagamento|compra|cartao|boleto|pix enviado|transferencia enviada|tarifa|juros|multa|uber|ifood|mercado|supermercado|farmacia|spotify|netflix|aluguel|energia|internet)\b/.test(combined)) {
+    return "saida";
+  }
+  if (category && category !== "Receita" && category !== "Categoria pendente") return "saida";
+  return "";
 }
 
 function classificationMetadata(userId, description, value, category) {
@@ -1473,6 +1504,27 @@ function getUserGoals(userId) {
   `).all(userId).map(goalPreview);
 }
 
+function getGoalContributions(userId, limit = 80) {
+  return db.prepare(`
+    SELECT gc.id, gc.goal_id, gc.transaction_id, gc.amount, gc.contribution_date, gc.note, gc.created_at, fg.goal_name
+    FROM goal_contributions gc
+    JOIN financial_goals fg ON fg.id = gc.goal_id AND fg.user_id = gc.user_id
+    WHERE gc.user_id = ?
+    ORDER BY gc.contribution_date DESC, gc.id DESC
+    LIMIT ?
+  `).all(userId, limit);
+}
+
+function getGoalContributionSummary(userId) {
+  return db.prepare(`
+    SELECT goal_id, strftime('%Y-%m', contribution_date) AS month, SUM(amount) AS total, COUNT(*) AS count
+    FROM goal_contributions
+    WHERE user_id = ?
+    GROUP BY goal_id, month
+    ORDER BY month DESC
+  `).all(userId);
+}
+
 function getPrimaryGoal(userId) {
   const goals = getUserGoals(userId);
   return goals[0] || null;
@@ -1974,6 +2026,7 @@ function revokeConsentAndClearData(userId, req) {
   try {
     db.prepare("DELETE FROM transactions WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM user_goals WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM goal_contributions WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM financial_goals WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
@@ -2214,7 +2267,12 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       const goals = getUserGoals(user.id);
-      return send(res, 200, { goal: goals[0] || null, goals });
+      return send(res, 200, {
+        goal: goals[0] || null,
+        goals,
+        contributions: getGoalContributions(user.id),
+        contributionSummary: getGoalContributionSummary(user.id),
+      });
     }
 
     if (req.method === "PUT" && url.pathname === "/api/goal") {
@@ -2272,6 +2330,7 @@ async function handleApi(req, res) {
       if (!goal) return send(res, 404, { error: "Meta não encontrada." });
       db.exec("BEGIN");
       try {
+        db.prepare("DELETE FROM goal_contributions WHERE goal_id = ? AND user_id = ?").run(goal.id, user.id);
         db.prepare("DELETE FROM financial_goals WHERE id = ? AND user_id = ?").run(goal.id, user.id);
         db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
         audit(user.id, "FINANCIAL_GOAL_DELETED", { goalId: goal.id, goalName: goal.goal_name }, req);
@@ -2309,13 +2368,56 @@ async function handleApi(req, res) {
           INSERT INTO transactions (user_id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(user.id, description, -amount, date, "Metas", "saida", "manual", "manual", "Meta financeira", "Concluida", "meta");
-        audit(user.id, "GOAL_CONTRIBUTION_CREATED", { goalId: goal.id, goalName: goal.goal_name, amount, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid }, req);
+        const contribution = db.prepare(`
+          INSERT INTO goal_contributions (user_id, goal_id, transaction_id, amount, contribution_date, note)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(user.id, goal.id, result.lastInsertRowid, amount, date, note || null);
+        audit(user.id, "GOAL_CONTRIBUTION_CREATED", { goalId: goal.id, goalName: goal.goal_name, contributionId: contribution.lastInsertRowid, amount, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid }, req);
         db.exec("COMMIT");
-        return send(res, 201, { ok: true, goalId: goal.id, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid });
+        return send(res, 201, { ok: true, goalId: goal.id, contributionId: contribution.lastInsertRowid, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid });
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
+    }
+
+    const contributionMatch = url.pathname.match(/^\/api\/goal\/contributions\/(\d+)$/);
+    if (contributionMatch && req.method === "DELETE") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de alterar metas financeiras." });
+      const contributionId = Number(contributionMatch[1]);
+      const contribution = db.prepare(`
+        SELECT gc.id, gc.goal_id, gc.transaction_id, gc.amount, fg.goal_name, fg.saved_amount
+        FROM goal_contributions gc
+        JOIN financial_goals fg ON fg.id = gc.goal_id AND fg.user_id = gc.user_id
+        WHERE gc.id = ? AND gc.user_id = ?
+      `).get(contributionId, user.id);
+      if (!contribution) return send(res, 404, { error: "Aporte não encontrado." });
+      const newSavedAmount = Math.max(Number(contribution.saved_amount || 0) - Number(contribution.amount || 0), 0);
+      db.exec("BEGIN");
+      try {
+        db.prepare("UPDATE financial_goals SET saved_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+          .run(newSavedAmount, contribution.goal_id, user.id);
+        db.prepare("DELETE FROM goal_contributions WHERE id = ? AND user_id = ?").run(contribution.id, user.id);
+        if (contribution.transaction_id) {
+          db.prepare("DELETE FROM transactions WHERE id = ? AND user_id = ? AND source = 'meta'")
+            .run(contribution.transaction_id, user.id);
+        }
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+        audit(user.id, "GOAL_CONTRIBUTION_DELETED", {
+          goalId: contribution.goal_id,
+          goalName: contribution.goal_name,
+          contributionId: contribution.id,
+          amount: contribution.amount,
+          savedAmount: newSavedAmount,
+        }, req);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return send(res, 200, { ok: true, goalId: contribution.goal_id, savedAmount: newSavedAmount });
     }
 
     if (req.method === "GET" && url.pathname === "/api/ai/analysis") {
@@ -2511,8 +2613,9 @@ async function handleApi(req, res) {
       `).all(user.id);
       const goals = getUserGoals(user.id);
       const goal = goals[0] || null;
+      const goalContributions = getGoalContributions(user.id, 1000);
       const categoryRules = loadCategoryRules(user.id);
-      return send(res, 200, { user, consents, goal, goals, categoryRules, transactions }, {
+      return send(res, 200, { user, consents, goal, goals, goalContributions, categoryRules, transactions }, {
         "Content-Disposition": "attachment; filename=\"meus-dados-financeiros.json\"",
       });
     }

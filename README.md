@@ -21,16 +21,19 @@ Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma tra
 - Sugestao automatica de categoria com regras locais e regras aprendidas.
 - Importacao de CSV, XLSX, XLS e PDF, com previa antes de salvar.
 - Mapeamento manual de colunas quando o arquivo usa nomes diferentes.
+- Inferencia reforcada de entrada/saida na importacao para evitar gastos positivos quando a planilha vem sem sinal negativo.
 - Deteccao de transacoes duplicadas antes da importacao.
 - Categorias com limites, status e alerta visual quando o orcamento e ultrapassado.
 - Graficos com Chart.js e estados vazios quando nao ha dados suficientes.
 - Donut de gastos por categoria com tooltip exibindo categoria, valor e percentual.
-- Metas financeiras com valor total, valor guardado, valor restante, percentual, previsao e modos leve, equilibrado e agressivo.
+- Metas financeiras com linha do tempo, meses restantes, esperado hoje, diferenca do plano e modos leve, equilibrado e agressivo.
+- Historico de aportes por meta, com agrupamento mensal e exclusao de aporte especifico.
 - Analise com IA/local com diagnostico, principais gastos, alertas, oportunidades de economia, plano da meta e proximas acoes.
 - Cache de analise da IA por hash mensal, reduzindo chamadas repetidas quando os dados nao mudam.
 - Minha atividade em Configuracoes, mostrando logs de auditoria do usuario.
 - Revogacao de consentimento LGPD com limpeza dos dados financeiros sem excluir a conta.
 - Exportacao dos dados do titular em JSON.
+- Exportacao de relatorio CSV e relatorio pronto para imprimir/salvar como PDF pelo navegador.
 - Exclusao completa da conta mediante senha.
 
 ## Open Finance no TCC
@@ -73,6 +76,14 @@ Sem chave/modelo, o app continua funcionando com analise local.
 
 ## Como Rodar
 
+Opcao simples no Windows:
+
+1. Abra a pasta do projeto.
+2. Dê dois cliques em `Ligar FinTrack AI.bat`.
+3. Acesse `http://localhost:3000`.
+
+Opcao pelo terminal:
+
 ```bash
 npm install
 npm start
@@ -92,8 +103,10 @@ http://localhost:3000
 4. Cadastre uma meta financeira.
 5. Abra o Dashboard para ver KPIs e graficos.
 6. Abra Analise com IA e clique em "Analisar gastos".
-7. Abra Configuracoes para ver "Minha atividade".
-8. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
+7. Registre um aporte na meta e veja o historico mensal na aba Metas.
+8. Abra Relatorios e gere CSV ou "Relatorio PDF" para salvar pelo navegador.
+9. Abra Configuracoes para ver "Minha atividade".
+10. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
 
 ## Formato Recomendado para CSV/Excel
 

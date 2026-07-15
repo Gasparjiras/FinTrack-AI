@@ -27,6 +27,7 @@ const importPreviewCard = document.querySelector("#importPreviewCard");
 const importPreviewBody = document.querySelector("#importPreviewBody");
 const importNotice = document.querySelector("#importNotice");
 const confirmImportBtn = document.querySelector("#confirmImportBtn");
+const printReportBtn = document.querySelector("#printReportBtn");
 const exportReportCsvBtn = document.querySelector("#exportReportCsvBtn");
 const currentMonthLabel = document.querySelector("#currentMonth");
 const analysisMonthInput = document.querySelector("#analysisMonth");
@@ -36,6 +37,7 @@ const categorySuggestion = document.querySelector("#categorySuggestion");
 const goalLivePreview = document.querySelector("#goalLivePreview");
 const goalsList = document.querySelector("#goalsList");
 const goalContributionSelect = document.querySelector("#goalContributionSelect");
+const goalContributionsList = document.querySelector("#goalContributionsList");
 const acceptConsentBtn = document.querySelector("#acceptConsentBtn");
 const revokeConsentBtn = document.querySelector("#revokeConsentBtn");
 const passwordInput = document.querySelector("#passwordInput");
@@ -58,6 +60,8 @@ const categoryPalette = ["#1F8A5F", "#E08A3C", "#B66A55", "#5F7486", "#2F5D50"];
 let transactions = [];
 let categories = [];
 let goals = [];
+let goalContributions = [];
+let goalContributionSummary = [];
 let analysis = null;
 let importCandidates = [];
 let importRows = [];
@@ -743,12 +747,35 @@ goalsList?.addEventListener("click", (event) => {
   }
 });
 
+goalContributionsList?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-contribution-delete]");
+  if (!deleteButton) return;
+  const item = goalContributions.find((entry) => String(entry.id) === String(deleteButton.dataset.contributionDelete));
+  if (!item) return;
+  const ok = confirm(`Excluir o aporte de ${currency.format(item.amount || 0)} em "${item.goal_name}"? O lançamento criado por esse aporte também será removido.`);
+  if (!ok) return;
+  deleteGoalContribution(item.id);
+});
+
 async function deleteGoal(goalId) {
   try {
     await api(`/api/goal/${goalId}`, { method: "DELETE" });
     if (String(editingGoalId) === String(goalId)) resetGoalForm();
     toast("Meta excluída.");
     await loadGoal();
+    await loadAnalysis(false);
+    showView("metas");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function deleteGoalContribution(contributionId) {
+  try {
+    await api(`/api/goal/contributions/${contributionId}`, { method: "DELETE" });
+    toast("Aporte removido da meta.");
+    await refreshFinancialData();
+    await loadGoal(editingGoalId);
     await loadAnalysis(false);
     showView("metas");
   } catch (error) {
@@ -780,8 +807,11 @@ goalContributionForm?.addEventListener("submit", async (event) => {
 async function loadGoal(selectedGoalId) {
   const result = await api("/api/goal");
   goals = result.goals || (result.goal ? [result.goal] : []);
+  goalContributions = result.contributions || [];
+  goalContributionSummary = result.contributionSummary || [];
   renderGoalsList();
   renderGoalContributionOptions();
+  renderGoalContributions();
   if (goalContributionForm?.elements.date && !goalContributionForm.elements.date.value) {
     goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
   }
@@ -793,6 +823,37 @@ async function loadGoal(selectedGoalId) {
   const selected = goals.find((item) => String(item.id) === String(selectedGoalId || editingGoalId)) || goals[0];
   fillGoalForm(selected);
   if (goalContributionSelect && !goalContributionSelect.value) goalContributionSelect.value = selected.id;
+  refreshIcons();
+}
+
+function renderGoalContributions() {
+  if (!goalContributionsList) return;
+  if (!goalContributions.length) {
+    goalContributionsList.innerHTML = `<div class="empty-compact">Nenhum aporte registrado ainda. Quando você guardar dinheiro em uma meta, ele aparecerá aqui.</div>`;
+    return;
+  }
+  const byMonth = goalContributions.reduce((map, item) => {
+    const month = String(item.contribution_date || "").slice(0, 7) || "Sem mês";
+    if (!map.has(month)) map.set(month, []);
+    map.get(month).push(item);
+    return map;
+  }, new Map());
+  goalContributionsList.innerHTML = [...byMonth.entries()].slice(0, 6).map(([month, items]) => {
+    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    return `
+      <section class="goal-contribution-month">
+        <div class="goal-contribution-month-head"><strong>${escapeHtml(monthLabel(month))}</strong><span>${currency.format(total)}</span></div>
+        ${items.map((item) => `
+          <article class="goal-contribution-row">
+            <span class="goal-item-icon"><i data-lucide="piggy-bank"></i></span>
+            <div><strong>${escapeHtml(item.goal_name || "Meta")}</strong><small>${formatDate(item.contribution_date)}${item.note ? ` - ${escapeHtml(item.note)}` : ""}</small></div>
+            <b>${currency.format(item.amount || 0)}</b>
+            <button type="button" class="icon-button danger-icon-button" data-contribution-delete="${item.id}" title="Excluir aporte"><i data-lucide="trash-2"></i></button>
+          </article>
+        `).join("")}
+      </section>
+    `;
+  }).join("");
   refreshIcons();
 }
 
@@ -1734,8 +1795,71 @@ function exportReportCsv() {
   toast("Relatório CSV gerado.");
 }
 
+function printReportPdf() {
+  if (!analysis || (!transactions.length && !goals.length)) return toast("Cadastre dados para gerar o relatório.");
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) return toast("Permita pop-ups para gerar o relatório.");
+  const topCategories = (analysis.categories || []).slice(0, 6);
+  const recentTransactions = transactions.slice(0, 12);
+  const goal = analysis.goal;
+  const aiText = analysis.ai?.executiveSummary || localSummary();
+  const html = `
+    <!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>Relatório FinTrack AI</title>
+        <style>
+          body { margin: 0; padding: 32px; font-family: Inter, Segoe UI, Arial, sans-serif; color: #111A17; background: #F7F5F0; }
+          .page { max-width: 920px; margin: 0 auto; background: #FFFDF8; border: 1px solid #DDD8CE; border-radius: 18px; padding: 30px; }
+          h1 { margin: 0; font-size: 28px; }
+          h2 { margin: 28px 0 12px; font-size: 17px; }
+          p { color: #5f6862; line-height: 1.5; }
+          .brand { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid #DDD8CE; padding-bottom: 18px; }
+          .kpis, .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+          .card { border: 1px solid #DDD8CE; border-radius: 14px; padding: 14px; background: #FBFAF6; }
+          .card span { display: block; color: #6F766F; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+          .card strong { display: block; margin-top: 6px; font-size: 18px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          th, td { border-bottom: 1px solid #E6E0D6; padding: 10px 8px; text-align: left; font-size: 12px; }
+          th { color: #6F766F; text-transform: uppercase; font-size: 10px; }
+          .negative { color: #C0392B; }
+          .positive { color: #1F8A5F; }
+          @media print { body { background: #fff; padding: 0; } .page { border: 0; border-radius: 0; } }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <section class="brand">
+            <div><h1>FinTrack AI</h1><p>Relatório financeiro de ${escapeHtml(monthLabel(analysis.selectedMonth || selectedAnalysisMonth))}</p></div>
+            <p>Gerado em ${escapeHtml(new Date().toLocaleString("pt-BR"))}</p>
+          </section>
+          <section class="kpis">
+            <div class="card"><span>Entradas</span><strong>${currency.format(analysis.totalIncome || 0)}</strong></div>
+            <div class="card"><span>Saídas</span><strong class="negative">${currency.format(analysis.totalExpenses || 0)}</strong></div>
+            <div class="card"><span>Saldo</span><strong class="${analysis.balance >= 0 ? "positive" : "negative"}">${currency.format(analysis.balance || 0)}</strong></div>
+            <div class="card"><span>Meta principal</span><strong>${goal ? `${goal.progressPercentage}%` : "Sem meta"}</strong></div>
+          </section>
+          <h2>Análise</h2>
+          <p>${escapeHtml(aiText)}</p>
+          ${goal ? `<h2>Meta principal</h2><div class="grid"><div class="card"><span>Nome</span><strong>${escapeHtml(goal.goal_name)}</strong></div><div class="card"><span>Aporte ideal</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div><div class="card"><span>Esperado hoje</span><strong>${currency.format(goal.expectedSavedNow || 0)}</strong></div><div class="card"><span>Status</span><strong>${escapeHtml(goal.status)}</strong></div></div>` : ""}
+          <h2>Principais categorias</h2>
+          <table><thead><tr><th>Categoria</th><th>Valor</th><th>Participação</th></tr></thead><tbody>${topCategories.map((item) => `<tr><td>${escapeHtml(item.category)}</td><td>${currency.format(item.total || 0)}</td><td>${item.share || 0}%</td></tr>`).join("") || `<tr><td colspan="3">Sem categorias no período.</td></tr>`}</tbody></table>
+          <h2>Últimos lançamentos</h2>
+          <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>${recentTransactions.map((item) => `<tr><td>${formatDate(item.date)}</td><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.category)}</td><td class="${item.value < 0 ? "negative" : "positive"}">${currency.format(item.value)}</td></tr>`).join("") || `<tr><td colspan="4">Nenhum lançamento.</td></tr>`}</tbody></table>
+        </main>
+        <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));</script>
+      </body>
+    </html>
+  `;
+  reportWindow.document.open();
+  reportWindow.document.write(html);
+  reportWindow.document.close();
+}
+
 document.querySelector("#exportBtn").addEventListener("click", exportData);
 document.querySelector("#settingsExportBtn").addEventListener("click", exportData);
+printReportBtn?.addEventListener("click", printReportPdf);
 exportReportCsvBtn?.addEventListener("click", exportReportCsv);
 
 statementImportForm?.addEventListener("submit", async (event) => {
@@ -1929,6 +2053,7 @@ function auditMessage(row) {
     FINANCIAL_GOAL_UPDATED: `Meta salva${details.goalName ? `: ${details.goalName}` : ""}`,
     FINANCIAL_GOAL_DELETED: `Meta excluída${details.goalName ? `: ${details.goalName}` : ""}`,
     GOAL_CONTRIBUTION_CREATED: `Valor guardado na meta: ${currency.format(details.amount || 0)}`,
+    GOAL_CONTRIBUTION_DELETED: `Aporte removido da meta: ${currency.format(details.amount || 0)}`,
     AI_ANALYSIS_REQUESTED: "Análise financeira solicitada",
     DATA_EXPORTED: "Dados baixados pelo usuário",
   };

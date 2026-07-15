@@ -15,7 +15,9 @@ A versao atual nao usa dados ficticios para preencher telas. O sistema inicia li
 5. O usuario confirma quais transacoes serao salvas.
 6. O dashboard calcula KPIs, graficos, categorias e alertas.
 7. O usuario cria uma meta financeira.
-8. A aba de IA gera uma analise local ou chama a OpenAI, quando configurada.
+8. O usuario registra aportes mensais na meta e acompanha o historico.
+9. A aba de IA gera uma analise local ou chama a OpenAI, quando configurada.
+10. O usuario exporta relatorios em CSV, JSON ou formato pronto para salvar como PDF.
 
 ## 3. Telas
 
@@ -44,6 +46,7 @@ Se nao houver dados, exibe estado vazio com chamada para importar extrato, cadas
 - Cadastro manual de transacoes.
 - Importacao de CSV, XLSX, XLS e PDF.
 - Mapeamento manual de colunas.
+- Inferencia de entrada/saida com base em sinal, coluna de tipo, descricao e categoria.
 - Previa antes de salvar.
 - Deteccao de duplicadas.
 - Tabela de transacoes salvas.
@@ -67,9 +70,20 @@ Cada meta possui:
 - valor restante;
 - prazo;
 - guardar por mes;
+- aporte ideal atualizado conforme os meses restantes;
+- valor esperado hoje;
+- diferenca entre guardado real e plano;
 - modo leve, equilibrado ou agressivo;
+- historico de aportes agrupado por mes;
+- exclusao de aporte especifico;
 - previsao de conclusao;
 - status e mensagem motivacional.
+
+### Relatorios
+
+- Graficos de categorias, fluxo, evolucao mensal, meta, recomendacoes e ranking.
+- Exportacao CSV dos lancamentos.
+- Relatorio PDF por impressao do navegador, com KPIs, analise, meta principal, categorias e ultimos lancamentos.
 
 ### Analise com IA
 
@@ -165,6 +179,7 @@ Ao revogar o consentimento, o sistema remove:
 - transacoes;
 - metas;
 - regras aprendidas;
+- aportes de metas;
 - cache de IA;
 - historico de uso diario da IA.
 
@@ -180,6 +195,14 @@ A conta permanece cadastrada, mas o painel financeiro fica bloqueado ate novo ac
 - Arquivos importados sao processados em memoria e descartados.
 
 ## 9. Como Rodar
+
+No Windows, a forma mais simples e abrir:
+
+```text
+Ligar FinTrack AI.bat
+```
+
+Ou pelo terminal:
 
 ```bash
 npm install
@@ -210,6 +233,8 @@ Se `OPENAI_MODEL` nao estiver configurado, o backend avisa no terminal.
 4. Confirmar a previa.
 5. Mostrar dashboard, categorias e graficos.
 6. Criar uma meta.
-7. Executar analise com IA/local.
-8. Mostrar logs em Minha atividade.
-9. Demonstrar revogacao de consentimento.
+7. Registrar um aporte mensal e mostrar o historico da meta.
+8. Executar analise com IA/local.
+9. Gerar relatorio CSV ou PDF.
+10. Mostrar logs em Minha atividade.
+11. Demonstrar revogacao de consentimento.

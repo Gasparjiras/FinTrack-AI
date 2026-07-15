@@ -7268,6 +7268,59 @@ table,
   background: rgba(192, 57, 43, .12) !important;
 }
 
+.goal-contributions-list {
+  display: grid;
+  gap: 12px;
+}
+
+.goal-contribution-month {
+  display: grid;
+  gap: 8px;
+}
+
+.goal-contribution-month-head,
+.goal-contribution-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+}
+
+.goal-contribution-month-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: var(--ft-muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.goal-contribution-month-head span {
+  color: var(--ft-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-contribution-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  border: 1px solid rgba(14, 31, 27, .1);
+  border-radius: 16px;
+  padding: 12px;
+  background: #FFFDF8;
+}
+
+.goal-contribution-row strong,
+.goal-contribution-row b {
+  color: var(--ft-text);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-contribution-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ft-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 @media (max-width: 900px) {
   .app-view[data-page="relatorios"] .report-grid {
     grid-template-columns: 1fr !important;
