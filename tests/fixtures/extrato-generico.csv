@@ -1,0 +1,6 @@
+Data;Descricao;Valor;Categoria;Tipo;Forma
+05/07/2026;Salario Empresa;4200,00;Receita;Entrada;Transferencia
+08/07/2026;Supermercado Extra;530,40;Mercado;Saida;Debito
+10/07/2026;Uber Viagem;84,30;Transporte;Saida;Credito
+12/07/2026;Spotify Premium;21,90;Assinaturas;Saida;Credito
+15/07/2026;Pix recebido reembolso;120,00;Receita;Entrada;Pix

@@ -181,6 +181,16 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS monthly_closings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    month TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    closed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, month),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -633,6 +643,22 @@ function suggestImportMapping(columns, rows = []) {
     paymentMethod: pick([/forma/, /pagamento/, /payment/, /metodo/, /m[eé]todo/]),
     source: pick([/banco/, /origem/, /source/, /instituicao/, /instituição/]),
   };
+}
+
+function detectImportPreset(filename, columns = [], layout = "") {
+  const normalizedFile = normalizeColumnName(filename);
+  const normalizedColumns = columns.map(normalizeColumnName).join(" ");
+  const haystack = `${normalizedFile} ${normalizedColumns}`;
+  if (layout === "planner" || /planilha financeira|gastos do mes|parcelamentos|entradas/.test(haystack)) {
+    return { id: "planilha-manual", name: "Planilha manual", confidence: "alta" };
+  }
+  if (/nubank|nu pagamentos|identificador|descri[cç]ao|valor/.test(haystack)) {
+    return { id: "nubank", name: "Extrato Nubank", confidence: "media" };
+  }
+  if (/\binter\b|banco inter|hist[oó]rico|lan[cç]amento/.test(haystack)) {
+    return { id: "inter", name: "Extrato Inter", confidence: "media" };
+  }
+  return { id: "csv-generico", name: "CSV/Excel genérico", confidence: "baixa" };
 }
 
 function valueFromMappedRow(row, mapping, key) {
@@ -1271,6 +1297,178 @@ function buildMonthlyComparison(transactions, selectedMonth) {
   };
 }
 
+function detectRecurringTransactions(transactions, selectedMonth) {
+  const recurringPattern = /spotify|netflix|disney|hbo|prime|globoplay|crunchyroll|deezer|youtube premium|apple music|aluguel|condominio|internet|energia|academia|telefone|celular|seguro|faculdade|curso/i;
+  const selected = normalizeMonthParam(selectedMonth);
+  const expenses = (transactions || []).filter((item) => Number(item.value || 0) < 0);
+  const groups = new Map();
+  for (const item of expenses) {
+    const key = merchantPattern(item.description) || normalizeDescription(item.description) || String(item.description || "").toLowerCase();
+    if (!key) continue;
+    const current = groups.get(key) || {
+      key,
+      description: item.description,
+      category: item.category,
+      months: new Set(),
+      count: 0,
+      total: 0,
+      selectedMonthTotal: 0,
+      values: [],
+      lastDate: item.date,
+      probable: false,
+    };
+    const amount = Math.abs(Number(item.value || 0));
+    current.count += 1;
+    current.total += amount;
+    current.values.push(amount);
+    current.months.add(String(item.date || "").slice(0, 7));
+    current.lastDate = String(item.date || "") > String(current.lastDate || "") ? item.date : current.lastDate;
+    if (selected && String(item.date || "").startsWith(selected)) current.selectedMonthTotal += amount;
+    if (recurringPattern.test(`${item.description} ${item.category}`) || ["Assinaturas", "Contas fixas"].includes(item.category)) current.probable = true;
+    groups.set(key, current);
+  }
+  return [...groups.values()]
+    .map((item) => {
+      const monthsCount = item.months.size || 1;
+      const averageMonthly = item.selectedMonthTotal > 0
+        ? item.selectedMonthTotal
+        : item.total / monthsCount;
+      const stable = item.values.length >= 2
+        ? Math.max(...item.values) - Math.min(...item.values) <= Math.max(20, averageMonthly * 0.35)
+        : false;
+      const confidence = item.months.size >= 2 && stable
+        ? "alta"
+        : item.months.size >= 2 || item.probable
+          ? "media"
+          : "baixa";
+      return {
+        description: item.description,
+        category: item.category,
+        probable: item.probable,
+        count: item.count,
+        months: [...item.months].sort(),
+        monthlyEstimate: Number(averageMonthly.toFixed(2)),
+        total: Number(item.total.toFixed(2)),
+        confidence,
+        lastDate: item.lastDate,
+      };
+    })
+    .filter((item) => item.probable || (item.months.length >= 3 && item.confidence !== "baixa"))
+    .sort((a, b) => b.monthlyEstimate - a.monthlyEstimate)
+    .slice(0, 10);
+}
+
+function calculateFinancialHealthScore(analysis) {
+  const income = Number(analysis.totalIncome || 0);
+  const expenses = Number(analysis.totalExpenses || 0);
+  const balance = Number(analysis.balance || 0);
+  const goal = analysis.goal || null;
+  const pendingCount = Number(analysis.pendingCount || 0);
+  const transactionCount = Number(analysis.transactionCount || 0);
+  let score = income > 0 ? 58 : expenses > 0 ? 38 : 0;
+  const components = [];
+
+  if (income > 0) {
+    const savingsRate = balance / income;
+    if (savingsRate >= 0.2) score += 22;
+    else if (savingsRate >= 0.1) score += 15;
+    else if (savingsRate >= 0) score += 8;
+    else score -= Math.min(28, Math.abs(savingsRate) * 80);
+    components.push({ label: "Saldo sobre renda", value: Math.round(savingsRate * 100), unit: "%", good: savingsRate >= 0.1 });
+
+    const fixedTotal = (analysis.categories || [])
+      .filter((item) => ["Contas fixas", "Assinaturas"].includes(item.category))
+      .reduce((sum, item) => sum + Number(item.total || 0), 0);
+    const fixedRate = fixedTotal / income;
+    if (fixedRate <= 0.35) score += 10;
+    else if (fixedRate <= 0.55) score += 3;
+    else score -= 12;
+    components.push({ label: "Fixos e assinaturas", value: Math.round(fixedRate * 100), unit: "%", good: fixedRate <= 0.45 });
+  }
+
+  if (goal) {
+    if (goal.progressPercentage >= 75) score += 10;
+    else if (goal.feasible) score += 7;
+    else score -= 8;
+    components.push({ label: "Ritmo da meta", value: goal.progressPercentage || 0, unit: "%", good: Boolean(goal.feasible) });
+  } else if (income > 0 || expenses > 0) {
+    score -= 5;
+    components.push({ label: "Meta ativa", value: 0, unit: "", good: false });
+  }
+
+  if (pendingCount === 0 && transactionCount > 0) score += 5;
+  else if (pendingCount > 0) score -= Math.min(8, pendingCount * 2);
+  components.push({ label: "Dados classificados", value: transactionCount ? Math.round(((transactionCount - pendingCount) / transactionCount) * 100) : 0, unit: "%", good: pendingCount === 0 && transactionCount > 0 });
+
+  if (analysis.recurringMonthlyTotal && income > 0) {
+    const recurringRate = Number(analysis.recurringMonthlyTotal || 0) / income;
+    if (recurringRate > 0.35) score -= 8;
+    components.push({ label: "Recorrências", value: Math.round(recurringRate * 100), unit: "%", good: recurringRate <= 0.25 });
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(score)));
+  const label = finalScore >= 80 ? "Forte" : finalScore >= 65 ? "Boa" : finalScore >= 45 ? "Atenção" : finalScore > 0 ? "Crítica" : "Sem dados";
+  const summary = finalScore === 0
+    ? "Cadastre ou importe dados para calcular sua saúde financeira."
+    : finalScore >= 65
+      ? "Seu painel mostra uma base financeira controlada. Continue acompanhando metas e categorias de maior peso."
+      : "Há pontos claros para ajustar: saldo, gastos recorrentes, meta ou qualidade das categorias.";
+  return { score: finalScore, label, summary, components };
+}
+
+function buildGoalTimeline(goal, contributionSummary = []) {
+  if (!goal) return [];
+  const start = parseGoalDate(goal.created_at || goal.updated_at);
+  const months = Math.max(Number(goal.target_months || 1), 1);
+  const monthlyTarget = Number(goal.originalMonthlyTarget || goal.monthlyTarget || 0);
+  const rowsByMonth = new Map(contributionSummary
+    .filter((item) => Number(item.goal_id) === Number(goal.id))
+    .map((item) => [item.month, item]));
+  let accumulated = Number(goal.initial_saved_amount || 0);
+  return Array.from({ length: Math.min(months, 24) }, (_, index) => {
+    const month = formatMonthKey(addMonthsFromDate(start, index));
+    const row = rowsByMonth.get(month);
+    const contributed = Number(row?.total || 0);
+    accumulated = Math.min(Number(goal.target_value || 0), accumulated + contributed);
+    const expected = Math.min(Number(goal.target_value || 0), Number(goal.initial_saved_amount || 0) + monthlyTarget * (index + 1));
+    return {
+      month,
+      label: month,
+      contributed,
+      accumulated: Number(accumulated.toFixed(2)),
+      expected: Number(expected.toFixed(2)),
+      status: accumulated + 1 >= expected ? "no-prazo" : "atrasado",
+    };
+  });
+}
+
+function buildGoalTimelines(goals, contributionSummary) {
+  return Object.fromEntries((goals || []).map((goal) => [goal.id, buildGoalTimeline(goal, contributionSummary)]));
+}
+
+function monthlyClosingSnapshot(analysis) {
+  return {
+    month: analysis.selectedMonth,
+    totalIncome: analysis.totalIncome,
+    totalExpenses: analysis.totalExpenses,
+    balance: analysis.balance,
+    financialScore: analysis.financialScore,
+    topCategories: (analysis.categories || []).slice(0, 5),
+    recurringMonthlyTotal: analysis.recurringMonthlyTotal || 0,
+    goal: analysis.goal ? {
+      id: analysis.goal.id,
+      goal_name: analysis.goal.goal_name,
+      progressPercentage: analysis.goal.progressPercentage,
+      saved_amount: analysis.goal.saved_amount,
+      remainingAmount: analysis.goal.remainingAmount,
+      status: analysis.goal.status,
+    } : null,
+    comparison: analysis.monthlyComparison,
+    insights: (analysis.insights || []).slice(0, 5),
+    closedAt: new Date().toISOString(),
+  };
+}
+
 function buildGoalPlanLegacy(goal, monthlyBalance, potentialMonthlySavings) {
   if (!goal) return null;
   const goalName = String(goal.goal_name || "").trim() || "Meta financeira";
@@ -1586,6 +1784,17 @@ function detectAnomalies(transactions, categories, categoryBudgets, months) {
     }
   }
 
+  const smallExpenses = expenses.filter((item) => Math.abs(Number(item.value || 0)) <= 35);
+  const smallTotal = smallExpenses.reduce((sum, item) => sum + Math.abs(Number(item.value || 0)), 0);
+  if (smallExpenses.length >= 5 && smallTotal >= 80) {
+    anomalies.push({
+      type: "microgastos",
+      severity: "atencao",
+      title: "Muitos gastos pequenos acumulados",
+      message: `${smallExpenses.length} despesas pequenas somaram ${money(smallTotal)}. Vale revisar compras por impulso e delivery barato recorrente.`,
+    });
+  }
+
   const categoryMonths = new Map();
   for (const item of expenses) {
     const key = `${item.category}|${String(item.date).slice(0, 7)}`;
@@ -1656,6 +1865,8 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     descriptionCounts.set(key, current);
   }
   const recurring = [...descriptionCounts.values()].filter((item) => item.count >= 2).sort((a, b) => b.total - a.total).slice(0, 5);
+  const recurringTransactions = detectRecurringTransactions(transactions, selectedMonth);
+  const recurringMonthlyTotal = recurringTransactions.reduce((sum, item) => sum + Number(item.monthlyEstimate || 0), 0);
   const pendingCount = analysisTransactions.filter((item) => item.category === "Categoria pendente").length;
   const classificationSummary = analysisTransactions.reduce((summary, item) => {
     const source = item.classification_source || "manual";
@@ -1795,6 +2006,16 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
       categoryBudgetSuggestions[0] ? `Use o valor recomendado para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
     ],
   };
+  const financialScore = calculateFinancialHealthScore({
+    totalIncome,
+    totalExpenses,
+    balance,
+    categories,
+    goal: goalPlan,
+    pendingCount,
+    transactionCount: analysisTransactions.length,
+    recurringMonthlyTotal,
+  });
   return {
     selectedMonth,
     previousMonth,
@@ -1810,7 +2031,8 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     categories,
     categoryRanking,
     largestExpenses,
-    recurring,
+    recurring: recurringTransactions.length ? recurringTransactions : recurring,
+    recurringMonthlyTotal,
     recommendations: recommendations.slice(0, 5),
     potentialMonthlySavings,
     pendingCount,
@@ -1819,6 +2041,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     classificationSummary,
     budgetAlerts,
     anomalies,
+    financialScore,
     aiBlocks,
     goal: goalPlan,
     insights: insights.slice(0, 7),
@@ -1841,7 +2064,10 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       monthlyBalance: localAnalysis.monthlyBalance,
       potentialMonthlySavings: localAnalysis.potentialMonthlySavings,
       pendingTransactions: localAnalysis.pendingCount,
+      recurringMonthlyTotal: localAnalysis.recurringMonthlyTotal || 0,
     },
+    financialScore: localAnalysis.financialScore,
+    recurringTransactions: (localAnalysis.recurring || []).slice(0, 8),
     categoryRanking: localAnalysis.categoryRanking.slice(0, 8),
     categoryBudgetSuggestions: (localAnalysis.categoryBudgetSuggestions || []).slice(0, 8),
     monthlyEvolution: localAnalysis.monthlyEvolution,
@@ -2031,6 +2257,7 @@ function revokeConsentAndClearData(userId, req) {
     db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_daily_usage WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM monthly_closings WHERE user_id = ?").run(userId);
     db.prepare(`
       UPDATE user_consents
       SET revoked_at = CURRENT_TIMESTAMP
@@ -2267,11 +2494,13 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       const goals = getUserGoals(user.id);
+      const contributionSummary = getGoalContributionSummary(user.id);
       return send(res, 200, {
         goal: goals[0] || null,
         goals,
         contributions: getGoalContributions(user.id),
-        contributionSummary: getGoalContributionSummary(user.id),
+        contributionSummary,
+        goalTimelines: buildGoalTimelines(goals, contributionSummary),
       });
     }
 
@@ -2428,11 +2657,15 @@ async function handleApi(req, res) {
       const rows = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
       const goals = getUserGoals(user.id);
       const goal = goals[0] || null;
+      const contributionSummary = getGoalContributionSummary(user.id);
+      const goalTimelines = buildGoalTimelines(goals, contributionSummary);
       const selectedRows = filterTransactionsForMonth(rows, selectedMonth);
       audit(user.id, "AI_ANALYSIS_REQUESTED", { month: selectedMonth, transactions: selectedRows.length }, req);
       const budgets = getCategoryBudgets(user.id, selectedMonth);
       const localAnalysis = buildFinancialAnalysis(rows, goal, budgets, { month: selectedMonth });
-      localAnalysis.goals = goals;
+      localAnalysis.goals = goals.map((item) => ({ ...item, timeline: goalTimelines[item.id] || [] }));
+      if (localAnalysis.goal) localAnalysis.goal.timeline = goalTimelines[localAnalysis.goal.id] || [];
+      localAnalysis.goalTimelines = goalTimelines;
       const useOpenAI = url.searchParams.get("useAI") === "1";
       const aiResult = useOpenAI
         ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis)
@@ -2447,6 +2680,43 @@ async function handleApi(req, res) {
           warning: aiResult.warning,
         },
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/monthly-closings") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const rows = db.prepare("SELECT id, month, snapshot_json, closed_at FROM monthly_closings WHERE user_id = ? ORDER BY month DESC LIMIT 18").all(user.id);
+      return send(res, 200, rows.map((row) => {
+        let snapshot = {};
+        try {
+          snapshot = JSON.parse(row.snapshot_json || "{}");
+        } catch {
+          snapshot = {};
+        }
+        return { id: row.id, month: row.month, closed_at: row.closed_at, snapshot };
+      }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/monthly-closings") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de fechar o mês." });
+      const body = await readJson(req);
+      const month = normalizeMonthParam(body.month) || new Date().toISOString().slice(0, 7);
+      const rows = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
+      const goals = getUserGoals(user.id);
+      const goal = goals[0] || null;
+      const budgets = getCategoryBudgets(user.id, month);
+      const analysis = buildFinancialAnalysis(rows, goal, budgets, { month });
+      analysis.goals = goals;
+      const snapshot = monthlyClosingSnapshot(analysis);
+      db.prepare(`
+        INSERT INTO monthly_closings (user_id, month, snapshot_json)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, month) DO UPDATE SET snapshot_json = excluded.snapshot_json, closed_at = CURRENT_TIMESTAMP
+      `).run(user.id, month, JSON.stringify(snapshot));
+      audit(user.id, "MONTHLY_CLOSING_CREATED", { month, balance: analysis.balance, score: analysis.financialScore?.score }, req);
+      return send(res, 200, { month, nextMonth: shiftMonthValue(month, 1), snapshot });
     }
 
     if (req.method === "POST" && url.pathname === "/api/import/pdf") {
@@ -2512,6 +2782,7 @@ async function handleApi(req, res) {
       else if ([".xlsx", ".xls"].includes(extension)) parsed = importTransactionsFromExcel(uploaded.buffer);
       else return send(res, 400, { error: "Formato não suportado. Envie CSV, XLSX, XLS ou PDF." });
       const mapping = suggestImportMapping(parsed.columns, parsed.rows);
+      const preset = detectImportPreset(uploaded.filename, parsed.columns, parsed.layout);
       const hasValueMapping = mapping.value || mapping.debitValue || mapping.creditValue;
       const preview = mapping.date && mapping.description && hasValueMapping
         ? await buildSmartImportPreview(user.id, parsed.rows, mapping, { useAI })
@@ -2521,6 +2792,7 @@ async function handleApi(req, res) {
         kind: extension === ".csv" ? "csv" : "excel",
         layout: parsed.layout || "table",
         filename: uploaded.filename,
+        preset,
         columns: parsed.columns,
         rows: parsed.rows,
         mapping,
@@ -2618,7 +2890,9 @@ async function handleApi(req, res) {
       const goal = goals[0] || null;
       const goalContributions = getGoalContributions(user.id, 1000);
       const categoryRules = loadCategoryRules(user.id);
-      return send(res, 200, { user, consents, goal, goals, goalContributions, categoryRules, transactions }, {
+      const monthlyClosings = db.prepare("SELECT month, snapshot_json, closed_at FROM monthly_closings WHERE user_id = ? ORDER BY month DESC").all(user.id)
+        .map((row) => ({ ...row, snapshot: JSON.parse(row.snapshot_json || "{}"), snapshot_json: undefined }));
+      return send(res, 200, { user, consents, goal, goals, goalContributions, monthlyClosings, categoryRules, transactions }, {
         "Content-Disposition": "attachment; filename=\"meus-dados-financeiros.json\"",
       });
     }
@@ -2669,10 +2943,23 @@ const serverHandler = (req, res) => {
   return serveStatic(req, res);
 };
 
-if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
-  https.createServer({ cert: fs.readFileSync(CERT_PATH), key: fs.readFileSync(KEY_PATH) }, serverHandler)
-    .listen(PORT, () => console.log(`Servidor HTTPS em https://localhost:${PORT}`));
-} else {
-  http.createServer(serverHandler)
+function startServer() {
+  if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
+    return https.createServer({ cert: fs.readFileSync(CERT_PATH), key: fs.readFileSync(KEY_PATH) }, serverHandler)
+      .listen(PORT, () => console.log(`Servidor HTTPS em https://localhost:${PORT}`));
+  }
+  return http.createServer(serverHandler)
     .listen(PORT, () => console.log(`Servidor HTTP de desenvolvimento em http://localhost:${PORT}`));
 }
+
+if (require.main === module) startServer();
+
+module.exports = {
+  startServer,
+  __test: {
+    importTransactionsFromCSV,
+    detectImportPreset,
+    suggestImportMapping,
+    rowToImportCandidate,
+  },
+};

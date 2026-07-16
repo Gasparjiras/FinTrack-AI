@@ -26,9 +26,20 @@ const importStats = document.querySelector("#importStats");
 const importPreviewCard = document.querySelector("#importPreviewCard");
 const importPreviewBody = document.querySelector("#importPreviewBody");
 const importNotice = document.querySelector("#importNotice");
+const importAssistant = document.querySelector("#importAssistant");
 const confirmImportBtn = document.querySelector("#confirmImportBtn");
 const printReportBtn = document.querySelector("#printReportBtn");
 const exportReportCsvBtn = document.querySelector("#exportReportCsvBtn");
+const presentationModeBtn = document.querySelector("#presentationModeBtn");
+const closeMonthBtn = document.querySelector("#closeMonthBtn");
+const monthlyClosingList = document.querySelector("#monthlyClosingList");
+const dashboardHealthScore = document.querySelector("#dashboardHealthScore");
+const reportHealthScore = document.querySelector("#reportHealthScore");
+const dashboardRecurringList = document.querySelector("#dashboardRecurringList");
+const reportRecurringList = document.querySelector("#reportRecurringList");
+const goalTimelineList = document.querySelector("#goalTimelineList");
+const openAiStatusPanel = document.querySelector("#openAiStatusPanel");
+const settingsAiStatusPanel = document.querySelector("#settingsAiStatusPanel");
 const currentMonthLabel = document.querySelector("#currentMonth");
 const analysisMonthInput = document.querySelector("#analysisMonth");
 const prevMonthBtn = document.querySelector("#prevMonthBtn");
@@ -62,11 +73,15 @@ let categories = [];
 let goals = [];
 let goalContributions = [];
 let goalContributionSummary = [];
+let goalTimelines = {};
 let analysis = null;
 let importCandidates = [];
 let importRows = [];
 let importMapping = {};
 let importSource = "importado";
+let importPreset = null;
+let monthlyClosings = [];
+let aiStatusSnapshot = null;
 let userConsentAccepted = true;
 let categoryManuallyChanged = false;
 let suggestionTimer = null;
@@ -804,14 +819,18 @@ goalContributionForm?.addEventListener("submit", async (event) => {
   }
 });
 
+goalContributionSelect?.addEventListener("change", renderGoalTimeline);
+
 async function loadGoal(selectedGoalId) {
   const result = await api("/api/goal");
   goals = result.goals || (result.goal ? [result.goal] : []);
   goalContributions = result.contributions || [];
   goalContributionSummary = result.contributionSummary || [];
+  goalTimelines = result.goalTimelines || {};
   renderGoalsList();
   renderGoalContributionOptions();
   renderGoalContributions();
+  renderGoalTimeline();
   if (goalContributionForm?.elements.date && !goalContributionForm.elements.date.value) {
     goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
   }
@@ -824,6 +843,24 @@ async function loadGoal(selectedGoalId) {
   fillGoalForm(selected);
   if (goalContributionSelect && !goalContributionSelect.value) goalContributionSelect.value = selected.id;
   refreshIcons();
+}
+
+function renderGoalTimeline() {
+  if (!goalTimelineList) return;
+  const selectedId = goalContributionSelect?.value || editingGoalId || goals[0]?.id;
+  const timeline = goalTimelines[selectedId] || analysis?.goal?.timeline || [];
+  if (!timeline.length) {
+    goalTimelineList.innerHTML = `<div class="empty-compact">Crie uma meta e registre aportes mensais para acompanhar a evolução.</div>`;
+    return;
+  }
+  goalTimelineList.innerHTML = timeline.slice(0, 12).map((item) => `
+    <article class="timeline-row ${escapeHtml(item.status || "")}">
+      <span>${escapeHtml(monthLabel(item.month))}</span>
+      <div><b>${currency.format(item.contributed || 0)}</b><small>guardado no mês</small></div>
+      <div><b>${currency.format(item.accumulated || 0)}</b><small>acumulado</small></div>
+      <div><b>${currency.format(item.expected || 0)}</b><small>esperado</small></div>
+    </article>
+  `).join("");
 }
 
 function renderGoalContributions() {
@@ -980,12 +1017,17 @@ async function loadAnalysis(useAI) {
   renderGoalSummary();
   renderCategoryCards();
   renderDashboardBudgets();
+  renderHealthScore();
+  renderRecurringTransactions();
+  renderGoalTimeline();
   renderAIReport();
+  renderOpenAIStatusPanels();
   renderVisibleCharts(document.querySelector(".app-view.active")?.dataset.page || "dashboard");
 }
 
 async function loadAIStatus() {
   const status = await api("/api/ai/status");
+  aiStatusSnapshot = status;
   aiProvider.textContent = status.configured
     ? `OpenAI conectada - ${status.remainingToday}/${status.dailyLimit} análises`
     : status.hasApiKey && !status.hasModel
@@ -993,6 +1035,7 @@ async function loadAIStatus() {
       : "Análise local - sem chave OpenAI";
   aiProvider.title = status.message || "";
   aiProvider.className = `provider-badge ${status.configured ? "openai" : "warning"}`;
+  renderOpenAIStatusPanels();
 }
 
 function updateSummaryKpis() {
@@ -1071,6 +1114,62 @@ function renderDashboardGoalCard() {
   `;
 }
 
+function renderHealthScore() {
+  const score = analysis?.financialScore;
+  const targets = [dashboardHealthScore, reportHealthScore].filter(Boolean);
+  if (!targets.length) return;
+  if (!score || !score.score) {
+    targets.forEach((container) => {
+      container.className = "score-empty";
+      container.innerHTML = "Cadastre ou importe dados para calcular a pontuação.";
+    });
+    return;
+  }
+  const html = `
+    <div class="score-ring" style="--score:${score.score * 3.6}deg"><strong>${score.score}</strong><span>/100</span></div>
+    <div class="score-copy"><b>${escapeHtml(score.label)}</b><p>${escapeHtml(score.summary)}</p></div>
+    <div class="score-components">
+      ${(score.components || []).slice(0, 4).map((item) => `<span class="${item.good ? "good" : "warn"}">${escapeHtml(item.label)} <strong>${item.value}${escapeHtml(item.unit || "")}</strong></span>`).join("")}
+    </div>
+  `;
+  targets.forEach((container) => {
+    container.className = "score-card-body";
+    container.innerHTML = html;
+  });
+}
+
+function renderRecurringTransactions() {
+  const items = analysis?.recurring || [];
+  const html = items.length
+    ? items.slice(0, 5).map((item) => `
+      <article class="recurring-row">
+        <span class="recurring-icon"><i data-lucide="${item.category === "Assinaturas" ? "badge-play" : "repeat-2"}"></i></span>
+        <div><strong>${escapeHtml(item.description)}</strong><small>${escapeHtml(item.category || "Categoria")} - ${escapeHtml(confidenceLabel(item.confidence || "media"))}</small></div>
+        <b>${currency.format(item.monthlyEstimate || item.total || 0)}/mês</b>
+      </article>
+    `).join("")
+    : `<div class="empty-compact">Nenhuma recorrência detectada ainda. Com mais meses, o sistema identifica assinaturas e contas fixas automaticamente.</div>`;
+  [dashboardRecurringList, reportRecurringList].filter(Boolean).forEach((container) => {
+    container.innerHTML = html;
+  });
+  refreshIcons();
+}
+
+function renderOpenAIStatusPanels() {
+  const status = aiStatusSnapshot || {};
+  const last = analysis?.aiStatus || {};
+  const html = `
+    <div><span>Modo atual</span><strong>${status.configured ? "OpenAI ativa" : "Análise local"}</strong></div>
+    <div><span>Modelo</span><strong>${escapeHtml(status.model || "Não configurado")}</strong></div>
+    <div><span>Requisições hoje</span><strong>${Number(status.usedToday || 0)}/${Number(status.dailyLimit || 0)}</strong></div>
+    <div><span>Restantes</span><strong>${Number(status.remainingToday || 0)}</strong></div>
+    <div><span>Última análise</span><strong>${last.source === "openai" ? (last.cached ? "OpenAI/cache" : "OpenAI") : "Local"}</strong></div>
+  `;
+  [openAiStatusPanel, settingsAiStatusPanel].filter(Boolean).forEach((container) => {
+    container.innerHTML = html;
+  });
+}
+
 function renderAIReport() {
   if (!analysis || (analysis.totalIncome === 0 && analysis.totalExpenses === 0)) {
     aiProvider.textContent = "Aguardando dados";
@@ -1110,6 +1209,8 @@ function renderAIReport() {
       <div class="consultant-avatar"><i data-lucide="sparkles"></i></div>
       <div><span class="consultant-label">${escapeHtml(provider)}</span><h3>Diagnóstico financeiro</h3><p>${escapeHtml(summary)}</p></div>
     </article>
+    ${renderScoreInsightBlock()}
+    ${renderRecurringInsightBlock()}
     ${renderClassificationSummaryBlock()}
     ${renderMonthlyComparisonBlock()}
     ${renderTextBlock("Diagnóstico financeiro", blocks.diagnosis, "scan-search")}
@@ -1186,6 +1287,39 @@ function renderClassificationSummaryBlock() {
         ${sources.map(([source, count]) => `<div><span>${escapeHtml(sourceLabel(source))}</span><strong>${count}</strong></div>`).join("")}
         ${confidence.map(([item, count]) => `<div><span>${escapeHtml(confidenceLabel(item))}</span><strong>${count}</strong></div>`).join("")}
       </div>
+    </div>
+  `;
+}
+
+function renderScoreInsightBlock() {
+  const score = analysis?.financialScore;
+  if (!score || !score.score) return "";
+  return `
+    <div class="ai-section score-ai-block">
+      <h3>Pontuação financeira</h3>
+      <div class="score-card-body compact-score">
+        <div class="score-ring" style="--score:${score.score * 3.6}deg"><strong>${score.score}</strong><span>/100</span></div>
+        <div class="score-copy"><b>${escapeHtml(score.label)}</b><p>${escapeHtml(score.summary)}</p></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecurringInsightBlock() {
+  const items = analysis?.recurring || [];
+  if (!items.length) return "";
+  const total = items.reduce((sum, item) => sum + Number(item.monthlyEstimate || item.total || 0), 0);
+  return `
+    <div class="ai-section recurring-ai-block">
+      <h3>Transações recorrentes</h3>
+      <p>Recorrências detectadas somam aproximadamente ${currency.format(total)} por mês.</p>
+      <div class="recurring-list">${items.slice(0, 4).map((item) => `
+        <article class="recurring-row">
+          <span class="recurring-icon"><i data-lucide="repeat-2"></i></span>
+          <div><strong>${escapeHtml(item.description)}</strong><small>${escapeHtml(item.category || "Categoria")}</small></div>
+          <b>${currency.format(item.monthlyEstimate || item.total || 0)}</b>
+        </article>
+      `).join("")}</div>
     </div>
   `;
 }
@@ -1714,6 +1848,7 @@ function confidenceLabel(value) {
   const text = String(value || "manual");
   const labels = {
     alta: "Alta",
+    media: "Média",
     baixa: "Baixa",
     aprendida: "Aprendida",
     manual: "Manual",
@@ -1754,7 +1889,56 @@ async function refreshFinancialData() {
   await loadTransactions();
   await loadCategories();
   await loadAnalysis(false);
+  await loadMonthlyClosings();
 }
+
+async function loadMonthlyClosings() {
+  if (!monthlyClosingList) return;
+  try {
+    monthlyClosings = await api("/api/monthly-closings");
+    renderMonthlyClosings();
+  } catch {
+    monthlyClosings = [];
+    renderMonthlyClosings();
+  }
+}
+
+function renderMonthlyClosings() {
+  if (!monthlyClosingList) return;
+  if (!monthlyClosings.length) {
+    monthlyClosingList.innerHTML = `<div class="empty-compact">Nenhum mês fechado ainda. Feche o mês atual para salvar um retrato e comparar depois.</div>`;
+    return;
+  }
+  monthlyClosingList.innerHTML = monthlyClosings.slice(0, 6).map((item) => {
+    const snap = item.snapshot || {};
+    const score = snap.financialScore?.score ? `${snap.financialScore.score}/100` : "Sem score";
+    return `
+      <article class="closing-row">
+        <span class="closing-month">${escapeHtml(monthLabel(item.month))}</span>
+        <div><strong>${currency.format(snap.balance || 0)}</strong><small>saldo fechado</small></div>
+        <div><strong>${score}</strong><small>saúde financeira</small></div>
+        <small>${escapeHtml(formatDateTime(item.closed_at))}</small>
+      </article>
+    `;
+  }).join("");
+}
+
+closeMonthBtn?.addEventListener("click", async () => {
+  if (!analysis || (analysis.totalIncome === 0 && analysis.totalExpenses === 0)) return toast("Cadastre lançamentos antes de fechar o mês.");
+  const ok = confirm(`Fechar ${monthLabel(selectedAnalysisMonth)}? O sistema salvará um retrato do mês e moverá a análise para o próximo mês.`);
+  if (!ok) return;
+  try {
+    const result = await api("/api/monthly-closings", {
+      method: "POST",
+      body: JSON.stringify({ month: selectedAnalysisMonth }),
+    });
+    toast(`Mês fechado. Próxima análise: ${monthLabel(result.nextMonth)}.`);
+    await loadMonthlyClosings();
+    await changeAnalysisMonth(result.nextMonth);
+  } catch (error) {
+    toast(error.message);
+  }
+});
 
 async function exportData() {
   const response = await fetch("/api/export");
@@ -1803,6 +1987,8 @@ function printReportPdf() {
   const recentTransactions = transactions.slice(0, 12);
   const goal = analysis.goal;
   const aiText = analysis.ai?.executiveSummary || localSummary();
+  const score = analysis.financialScore || {};
+  const recurring = analysis.recurring || [];
   const html = `
     <!doctype html>
     <html lang="pt-BR">
@@ -1838,15 +2024,19 @@ function printReportPdf() {
             <div class="card"><span>Entradas</span><strong>${currency.format(analysis.totalIncome || 0)}</strong></div>
             <div class="card"><span>Saídas</span><strong class="negative">${currency.format(analysis.totalExpenses || 0)}</strong></div>
             <div class="card"><span>Saldo</span><strong class="${analysis.balance >= 0 ? "positive" : "negative"}">${currency.format(analysis.balance || 0)}</strong></div>
-            <div class="card"><span>Meta principal</span><strong>${goal ? `${goal.progressPercentage}%` : "Sem meta"}</strong></div>
+            <div class="card"><span>Saúde financeira</span><strong>${score.score ? `${score.score}/100` : "Sem dados"}</strong></div>
           </section>
           <h2>Análise</h2>
           <p>${escapeHtml(aiText)}</p>
           ${goal ? `<h2>Meta principal</h2><div class="grid"><div class="card"><span>Nome</span><strong>${escapeHtml(goal.goal_name)}</strong></div><div class="card"><span>Aporte ideal</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div><div class="card"><span>Esperado hoje</span><strong>${currency.format(goal.expectedSavedNow || 0)}</strong></div><div class="card"><span>Status</span><strong>${escapeHtml(goal.status)}</strong></div></div>` : ""}
+          <h2>Transações recorrentes</h2>
+          <table><thead><tr><th>Descrição</th><th>Categoria</th><th>Estimativa mensal</th><th>Confiança</th></tr></thead><tbody>${recurring.slice(0, 8).map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.category || "-")}</td><td>${currency.format(item.monthlyEstimate || item.total || 0)}</td><td>${escapeHtml(confidenceLabel(item.confidence || "media"))}</td></tr>`).join("") || `<tr><td colspan="4">Sem recorrências detectadas.</td></tr>`}</tbody></table>
           <h2>Principais categorias</h2>
           <table><thead><tr><th>Categoria</th><th>Valor</th><th>Participação</th></tr></thead><tbody>${topCategories.map((item) => `<tr><td>${escapeHtml(item.category)}</td><td>${currency.format(item.total || 0)}</td><td>${item.share || 0}%</td></tr>`).join("") || `<tr><td colspan="3">Sem categorias no período.</td></tr>`}</tbody></table>
           <h2>Últimos lançamentos</h2>
           <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>${recentTransactions.map((item) => `<tr><td>${formatDate(item.date)}</td><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.category)}</td><td class="${item.value < 0 ? "negative" : "positive"}">${currency.format(item.value)}</td></tr>`).join("") || `<tr><td colspan="4">Nenhum lançamento.</td></tr>`}</tbody></table>
+          <h2>LGPD e origem dos dados</h2>
+          <p>Este relatório usa apenas dados cadastrados ou importados pelo usuário. Em versão acadêmica, não há conexão real com Open Finance; a importação manual valida a lógica de análise, metas, recomendações e direitos do titular.</p>
         </main>
         <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));</script>
       </body>
@@ -1857,10 +2047,100 @@ function printReportPdf() {
   reportWindow.document.close();
 }
 
+function openPresentationMode() {
+  let data = analysis;
+  let demo = false;
+  if (!data || (data.totalIncome === 0 && data.totalExpenses === 0)) {
+    demo = confirm("Não há dados reais suficientes para apresentar. Abrir modo apresentação com dados demonstrativos apenas nesta janela?");
+    if (!demo) return;
+    data = demoPresentationAnalysis();
+  }
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) return toast("Permita pop-ups para abrir o modo apresentação.");
+  const topCategories = (data.categories || []).slice(0, 5);
+  const score = data.financialScore || { score: 0, label: "Sem dados", summary: "Sem dados suficientes." };
+  const recurring = data.recurring || [];
+  const html = `
+    <!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>FinTrack AI - Modo apresentação</title>
+        <style>
+          body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: #F7F5F0; color: #0E1F1B; }
+          main { min-height: 100vh; padding: 44px; display: grid; gap: 24px; }
+          .hero { border-radius: 28px; padding: 34px; color: #fff; background: linear-gradient(135deg, #071C17, #0D3228 62%, #D99B4C); display: grid; grid-template-columns: 1.2fr .8fr; gap: 24px; align-items: end; }
+          h1 { margin: 0 0 10px; font-size: clamp(36px, 5vw, 70px); letter-spacing: -.04em; }
+          h2 { margin: 0 0 14px; font-size: 22px; }
+          p { line-height: 1.5; color: inherit; opacity: .82; }
+          .badge { display: inline-flex; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,.12); font-weight: 800; margin-bottom: 16px; }
+          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+          .card { border: 1px solid rgba(14,31,27,.12); border-radius: 22px; padding: 22px; background: #FFFDF8; box-shadow: 0 18px 45px rgba(30,23,12,.08); }
+          .card span { color: #67736d; font-size: 12px; font-weight: 850; text-transform: uppercase; }
+          .card strong { display: block; margin-top: 8px; font-size: 28px; }
+          .wide { grid-column: span 2; }
+          .list { display: grid; gap: 10px; }
+          .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #E6E0D6; }
+          .positive { color: #1F8A5F; } .negative { color: #C0392B; }
+          @media (max-width: 850px) { main { padding: 20px; } .hero, .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+        </style>
+      </head>
+      <body>
+        <main>
+          <section class="hero">
+            <div><span class="badge">FinTrack AI ${demo ? "• demonstração acadêmica" : "• dados reais do usuário"}</span><h1>Planejador financeiro com IA</h1><p>Protótipo acadêmico com importação manual de extratos, categorização de gastos, metas, recomendações e controle LGPD.</p></div>
+            <div><h2>Resumo de ${escapeHtml(monthLabel(data.selectedMonth || selectedAnalysisMonth))}</h2><p>${escapeHtml(data.ai?.executiveSummary || data.insights?.[0] || localSummary())}</p></div>
+          </section>
+          <section class="grid">
+            <article class="card"><span>Entradas</span><strong class="positive">${currency.format(data.totalIncome || 0)}</strong></article>
+            <article class="card"><span>Gastos</span><strong class="negative">${currency.format(data.totalExpenses || 0)}</strong></article>
+            <article class="card"><span>Saldo</span><strong>${currency.format(data.balance || 0)}</strong></article>
+            <article class="card"><span>Saúde financeira</span><strong>${score.score}/100</strong><p>${escapeHtml(score.label)}</p></article>
+            <article class="card wide"><h2>Top categorias</h2><div class="list">${topCategories.map((item) => `<div class="row"><span>${escapeHtml(item.category)}</span><strong>${currency.format(item.total || 0)} • ${item.share || 0}%</strong></div>`).join("") || "Sem categorias."}</div></article>
+            <article class="card wide"><h2>Recorrências detectadas</h2><div class="list">${recurring.slice(0, 5).map((item) => `<div class="row"><span>${escapeHtml(item.description)}</span><strong>${currency.format(item.monthlyEstimate || item.total || 0)}/mês</strong></div>`).join("") || "Sem recorrências detectadas."}</div></article>
+            <article class="card wide"><h2>Meta principal</h2><p>${data.goal ? `${escapeHtml(data.goal.goal_name)}: ${data.goal.progressPercentage}% concluída. Falta ${currency.format(data.goal.remainingAmount || 0)}.` : "Nenhuma meta cadastrada."}</p></article>
+            <article class="card wide"><h2>Observação LGPD</h2><p>Sem Open Finance real: dados são inseridos manualmente ou importados pelo usuário. A opção demonstrativa do modo apresentação não grava dados no banco.</p></article>
+          </section>
+        </main>
+      </body>
+    </html>
+  `;
+  reportWindow.document.open();
+  reportWindow.document.write(html);
+  reportWindow.document.close();
+}
+
+function demoPresentationAnalysis() {
+  return {
+    selectedMonth: selectedAnalysisMonth,
+    totalIncome: 4200,
+    totalExpenses: 2730,
+    balance: 1470,
+    categories: [
+      { category: "Mercado", total: 820, share: 30 },
+      { category: "Contas fixas", total: 760, share: 28 },
+      { category: "Alimentação", total: 480, share: 18 },
+      { category: "Transporte", total: 320, share: 12 },
+      { category: "Assinaturas", total: 150, share: 5 },
+    ],
+    recurring: [
+      { description: "Spotify Premium", monthlyEstimate: 21.9, category: "Assinaturas" },
+      { description: "Internet residencial", monthlyEstimate: 119.9, category: "Contas fixas" },
+    ],
+    financialScore: { score: 74, label: "Boa", summary: "Exemplo acadêmico." },
+    goal: { goal_name: "Reserva de emergência", progressPercentage: 38, remainingAmount: 6200 },
+    insights: ["Gastos controlados e meta viável com aportes mensais constantes."],
+  };
+}
+
 document.querySelector("#exportBtn").addEventListener("click", exportData);
 document.querySelector("#settingsExportBtn").addEventListener("click", exportData);
 printReportBtn?.addEventListener("click", printReportPdf);
 exportReportCsvBtn?.addEventListener("click", exportReportCsv);
+presentationModeBtn?.addEventListener("click", openPresentationMode);
+document.querySelectorAll("[data-export-json]").forEach((button) => button.addEventListener("click", exportData));
+document.querySelectorAll("[data-export-csv]").forEach((button) => button.addEventListener("click", exportReportCsv));
+document.querySelectorAll("[data-export-pdf]").forEach((button) => button.addEventListener("click", printReportPdf));
 
 statementImportForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1882,8 +2162,9 @@ statementImportForm?.addEventListener("submit", async (event) => {
     importRows = payload.rows || [];
     importMapping = payload.mapping || {};
     importSource = payload.kind || "importado";
+    importPreset = payload.preset || null;
     renderImportMapping(payload.columns || [], importMapping);
-    renderImportPreview(payload.candidates || [], payload.notice, { ...(payload.summary || {}), ai: payload.ai }, payload.errors);
+    renderImportPreview(payload.candidates || [], payload.notice, { ...(payload.summary || {}), ai: payload.ai, preset: payload.preset }, payload.errors);
     toast((payload.candidates || []).length ? "Arquivo lido. Revise a prévia antes de importar." : "Arquivo lido. Confira o mapeamento das colunas.");
   } catch (error) {
     toast(error.message);
@@ -1949,7 +2230,13 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
   const aiLabel = ai.source === "openai"
     ? `OpenAI${ai.model ? ` (${ai.model})` : ""}`
     : "Análise local";
+  const incomeCount = importCandidates.filter((item) => Number(item.value || 0) > 0).length;
+  const expenseCount = importCandidates.filter((item) => Number(item.value || 0) < 0).length;
+  const pendingCount = importCandidates.filter((item) => item.category === "Categoria pendente").length;
+  const duplicateCount = importCandidates.filter((item) => item.duplicate).length;
+  const preset = summary.preset || importPreset;
   const summaryHtml = `
+    <span><strong>${escapeHtml(preset?.name || "CSV/Excel genérico")}</strong> preset</span>
     <span><strong>${summary.rows || importRows.length || importCandidates.length}</strong> linhas lidas</span>
     <span><strong>${summary.found || importCandidates.length}</strong> transações encontradas</span>
     <span><strong>${summary.importable || 0}</strong> prontas para importar</span>
@@ -1961,6 +2248,15 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
   `;
   if (importStats) {
     importStats.innerHTML = summaryHtml + (errors?.length ? `<p>${escapeHtml(errors[0].message)} ${errors.length > 1 ? `+ ${errors.length - 1} erro(s).` : ""}</p>` : "");
+  }
+  if (importAssistant) {
+    importAssistant.innerHTML = `
+      <div class="assistant-avatar"><i data-lucide="scan-search"></i></div>
+      <div>
+        <strong>Assistente de importação</strong>
+        <p>Detectei ${incomeCount} entrada(s), ${expenseCount} saída(s), ${duplicateCount} duplicada(s) e ${pendingCount} categoria(s) pendente(s). Revise só o que estiver pendente ou diferente do esperado antes de confirmar.</p>
+      </div>
+    `;
   }
   importPreviewBody.innerHTML = importCandidates.map((item, index) => {
     const duplicate = Boolean(item.duplicate);
@@ -1981,6 +2277,7 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
   }).join("") || `<tr><td colspan="8"><div class="empty-compact">Arquivo lido, mas nenhuma transação foi reconhecida. Revise o mapeamento de data, descrição e valor.</div></td></tr>`;
   setHidden(importPreviewCard, false);
   setHidden(confirmImportBtn, importCandidates.filter((item) => !item.duplicate).length === 0);
+  refreshIcons();
 }
 
 function typeOptions(value) {
@@ -2054,6 +2351,7 @@ function auditMessage(row) {
     FINANCIAL_GOAL_DELETED: `Meta excluída${details.goalName ? `: ${details.goalName}` : ""}`,
     GOAL_CONTRIBUTION_CREATED: `Valor guardado na meta: ${currency.format(details.amount || 0)}`,
     GOAL_CONTRIBUTION_DELETED: `Aporte removido da meta: ${currency.format(details.amount || 0)}`,
+    MONTHLY_CLOSING_CREATED: `Fechamento mensal salvo${details.month ? `: ${monthLabel(details.month)}` : ""}`,
     AI_ANALYSIS_REQUESTED: "Análise financeira solicitada",
     DATA_EXPORTED: "Dados baixados pelo usuário",
   };
@@ -2198,6 +2496,7 @@ async function boot(options = {}) {
       await loadGoal();
       await loadAnalysis(false);
       await loadAIStatus();
+      await loadMonthlyClosings();
     } catch (error) {
       console.error("Erro ao carregar dados do painel:", error);
       toast("Conta aberta. Atualize a página se algum card não carregar.");
