@@ -962,7 +962,7 @@ function inferImportedType(description, rawType = "", category = "") {
     return "saida";
   }
   if (category && category !== "Receita" && category !== "Categoria pendente") return "saida";
-  return "";
+  return "saida";
 }
 
 function classificationMetadata(userId, description, value, category) {
@@ -2483,6 +2483,7 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de importar extratos." });
+      const useAI = url.searchParams.get("ai") === "1";
       const uploaded = await readUploadedStatement(req);
       const extension = path.extname(uploaded.filename).toLowerCase();
       if (extension === ".pdf" || /application\/pdf/i.test(uploaded.contentType)) {
@@ -2491,7 +2492,9 @@ async function handleApi(req, res) {
         await parser.destroy();
         const learnedRules = loadCategoryRules(user.id);
         const candidates = parseTransactionsFromText(result.text, learnedRules);
-        const aiResult = await enrichCandidatesWithOpenAI(user.id, candidates, learnedRules);
+        const aiResult = useAI
+          ? await enrichCandidatesWithOpenAI(user.id, candidates, learnedRules)
+          : { candidates, source: "local", model: null, cached: false, warning: null };
         const preview = finishImportPreview(user.id, aiResult.candidates, [], aiResult);
         audit(user.id, "PDF_STATEMENT_ANALYZED", { candidates: candidates.length }, req);
         return send(res, 200, {
@@ -2511,7 +2514,7 @@ async function handleApi(req, res) {
       const mapping = suggestImportMapping(parsed.columns, parsed.rows);
       const hasValueMapping = mapping.value || mapping.debitValue || mapping.creditValue;
       const preview = mapping.date && mapping.description && hasValueMapping
-        ? await buildSmartImportPreview(user.id, parsed.rows, mapping, { useAI: true })
+        ? await buildSmartImportPreview(user.id, parsed.rows, mapping, { useAI })
         : { candidates: [], ai: { source: "local", model: null, cached: false, warning: null }, summary: { rows: parsed.rows.length, found: 0, importable: 0, income: 0, expenses: 0, errors: 0, duplicates: 0 }, errors: [] };
       audit(user.id, "STATEMENT_FILE_ANALYZED", { filename: uploaded.filename, rows: parsed.rows.length }, req);
       return send(res, 200, {
@@ -2538,7 +2541,7 @@ async function handleApi(req, res) {
       if (!mapping.date || !mapping.description || !(mapping.value || mapping.debitValue || mapping.creditValue)) {
         return send(res, 400, { error: "Mapeie pelo menos data, descrição e valor. Se a planilha separar Débito e Crédito, mapeie uma dessas colunas de valor." });
       }
-      const preview = await buildSmartImportPreview(user.id, rows, mapping, { useAI: true });
+      const preview = await buildSmartImportPreview(user.id, rows, mapping, { useAI: url.searchParams.get("ai") === "1" });
       return send(res, 200, preview);
     }
 
