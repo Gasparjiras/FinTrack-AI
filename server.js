@@ -928,11 +928,11 @@ function merchantPattern(description) {
 }
 
 function loadCategoryRules(userId) {
-  return db.prepare("SELECT merchant_pattern, category FROM category_rules WHERE user_id = ? ORDER BY LENGTH(merchant_pattern) DESC").all(userId);
+  return db.prepare("SELECT id, merchant_pattern, category, created_at, updated_at FROM category_rules WHERE user_id = ? ORDER BY LENGTH(merchant_pattern) DESC").all(userId);
 }
 
 function learnCategoryRule(userId, description, category) {
-  if (!ALLOWED_CATEGORIES.includes(category) || ["Categoria pendente", "Receita"].includes(category)) return;
+  if (!category || ["Categoria pendente", "Receita"].includes(category) || !categoryExists(userId, category)) return;
   const pattern = merchantPattern(description);
   if (pattern.length < 3) return;
   db.prepare(`
@@ -947,6 +947,37 @@ function learnCategoryRule(userId, description, category) {
   for (const item of pending) {
     if (normalizeDescription(item.description).includes(pattern)) update.run(category, item.id, userId);
   }
+}
+
+function saveCategoryRule(userId, merchantPattern, category) {
+  const pattern = normalizeDescription(merchantPattern).slice(0, 80);
+  if (pattern.length < 3) return { error: "Informe um padrão com pelo menos 3 caracteres." };
+  if (!category || ["Categoria pendente", "Receita"].includes(category)) {
+    return { error: "Escolha uma categoria de gasto válida para a regra." };
+  }
+  if (!categoryExists(userId, category)) return { error: "Categoria não encontrada." };
+  const result = db.prepare(`
+    INSERT INTO category_rules (user_id, merchant_pattern, category)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_id, merchant_pattern) DO UPDATE SET
+      category = excluded.category,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(userId, pattern, category);
+  const candidates = db.prepare("SELECT id, description FROM transactions WHERE user_id = ? AND value < 0 AND category IN ('Categoria pendente', 'Outros')").all(userId);
+  const update = db.prepare(`
+    UPDATE transactions
+    SET category = ?, classification_confidence = 'aprendida', classification_source = 'regra aprendida', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ?
+  `);
+  for (const item of candidates) {
+    if (normalizeDescription(item.description).includes(pattern)) update.run(category, item.id, userId);
+  }
+  db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
+  return {
+    id: result.lastInsertRowid,
+    merchant_pattern: pattern,
+    category,
+  };
 }
 
 function categorize(description, learnedRules = []) {
@@ -1821,6 +1852,51 @@ function detectAnomalies(transactions, categories, categoryBudgets, months) {
   return anomalies.slice(0, 6);
 }
 
+function buildSevenDayPlan({ categories = [], recommendations = [], goalPlan = null, budgetAlerts = [], pendingCount = 0, monthlyComparison = null, recurringMonthlyTotal = 0, totalIncome = 0, balance = 0 }) {
+  const topCategory = categories[0];
+  const topRecommendation = recommendations[0];
+  const topAlert = budgetAlerts[0];
+  const actions = [];
+  actions.push(topCategory
+    ? `Dia 1: revise ${topCategory.category}, que concentra ${topCategory.share}% dos gastos do mês (${money(topCategory.total)}).`
+    : "Dia 1: cadastre ou importe seus lançamentos para criar uma base real de análise.");
+  if (pendingCount > 0) {
+    actions.push(`Dia 2: corrija apenas as ${pendingCount} transação(ões) pendentes para a IA não trabalhar com categoria incerta.`);
+  } else {
+    actions.push("Dia 2: confira se as maiores despesas estão com categoria correta e salve regras para compras parecidas.");
+  }
+  if (goalPlan) {
+    actions.push(`Dia 3: separe ${money(goalPlan.monthlyTarget)} para ${goalPlan.goal_name}; esse é o aporte necessário para manter o prazo.`);
+  } else {
+    actions.push("Dia 3: crie uma meta com valor, prazo e quanto já guardou para transformar o saldo em plano.");
+  }
+  if (topRecommendation) {
+    actions.push(`Dia 4: aplique o corte sugerido em ${topRecommendation.category} e tente liberar ${money(topRecommendation.potentialMonthlySavings)} no mês.`);
+  } else {
+    actions.push("Dia 4: escolha uma categoria variável e defina um teto semanal simples para evitar gasto por impulso.");
+  }
+  if (topAlert) {
+    actions.push(`Dia 5: ajuste ${topAlert.category}; hoje ela está ${money(topAlert.exceededBy)} acima do valor recomendado.`);
+  } else if (recurringMonthlyTotal > 0) {
+    actions.push(`Dia 5: revise recorrências e assinaturas, que somam cerca de ${money(recurringMonthlyTotal)} por mês.`);
+  } else {
+    actions.push("Dia 5: procure cobranças repetidas como streaming, academia, internet ou tarifas bancárias.");
+  }
+  if (monthlyComparison?.hasPrevious) {
+    actions.push(`Dia 6: compare com o mês anterior: ${monthlyComparison.summary}`);
+  } else {
+    actions.push("Dia 6: mantenha o registro diário para permitir comparação real no próximo fechamento mensal.");
+  }
+  if (totalIncome > 0) {
+    actions.push(balance >= 0
+      ? `Dia 7: feche a semana com saldo positivo e registre quanto do saldo (${money(balance)}) vai para metas.`
+      : `Dia 7: reduza ao menos ${money(Math.abs(balance))} no próximo ciclo para sair do saldo negativo.`);
+  } else {
+    actions.push("Dia 7: cadastre sua renda mensal para a análise medir esforço real, não apenas despesas.");
+  }
+  return actions.slice(0, 7);
+}
+
 function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], options = {}) {
   const selectedMonth = normalizeMonthParam(options.month);
   const previousMonth = selectedMonth ? shiftMonthValue(selectedMonth, -1) : null;
@@ -1957,6 +2033,17 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
       exceededBy: item.difference,
     }))
     .sort((a, b) => b.exceededBy - a.exceededBy);
+  const weeklyPlan = buildSevenDayPlan({
+    categories,
+    recommendations,
+    goalPlan,
+    budgetAlerts,
+    pendingCount,
+    monthlyComparison,
+    recurringMonthlyTotal,
+    totalIncome,
+    balance,
+  });
   if (budgetAlerts.length) insights.push(`Priorize ajustes em ${budgetAlerts.map((item) => item.category).join(", ")} para liberar espaço no orçamento.`);
   if (goalPlan) {
     const objectiveLabels = {
@@ -2005,6 +2092,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
       recommendations[0] ? recommendations[0].message : "Cadastre mais gastos para encontrar oportunidades de economia.",
       categoryBudgetSuggestions[0] ? `Use o valor recomendado para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
     ],
+    weeklyPlan,
   };
   const financialScore = calculateFinancialHealthScore({
     totalIncome,
@@ -2048,7 +2136,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
   };
 }
 
-async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) {
+async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis, options = {}) {
   if (!isOpenAIConfigured() || (localAnalysis.totalIncome === 0 && localAnalysis.totalExpenses === 0)) {
     return { plan: null, source: "local", model: null, cached: false, warning: null };
   }
@@ -2104,12 +2192,15 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis) 
       goalPlan: localAnalysis.aiBlocks.goalPlan,
       nextActions: localAnalysis.aiBlocks.nextActions,
       educationInsight: localAnalysis.aiBlocks.educationInsight,
+      weeklyPlan: localAnalysis.aiBlocks.weeklyPlan,
     },
   };
   const fingerprint = generateFinancialAnalysisHash(userId, transactions, localAnalysis.categoryBudgets, localAnalysis.goals || goal, localAnalysis.selectedMonth);
-  const cached = db.prepare("SELECT response_json FROM ai_analysis_cache WHERE user_id = ? AND fingerprint = ?").get(userId, fingerprint);
-  if (cached) {
-    return { plan: JSON.parse(cached.response_json), source: "openai", model: OPENAI_MODEL, cached: true, warning: null };
+  if (!options.forceRefresh) {
+    const cached = db.prepare("SELECT response_json FROM ai_analysis_cache WHERE user_id = ? AND fingerprint = ?").get(userId, fingerprint);
+    if (cached) {
+      return { plan: JSON.parse(cached.response_json), source: "openai", model: OPENAI_MODEL, cached: true, warning: null };
+    }
   }
   if (!consumeAIRequest(userId)) {
     return {
@@ -2667,8 +2758,9 @@ async function handleApi(req, res) {
       if (localAnalysis.goal) localAnalysis.goal.timeline = goalTimelines[localAnalysis.goal.id] || [];
       localAnalysis.goalTimelines = goalTimelines;
       const useOpenAI = url.searchParams.get("useAI") === "1";
+      const forceRefresh = url.searchParams.get("refreshAI") === "1";
       const aiResult = useOpenAI
-        ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis)
+        ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis, { forceRefresh })
         : { plan: null, source: "local", model: null, cached: false, warning: null };
       return send(res, 200, {
         ...localAnalysis,
@@ -2844,6 +2936,52 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       return send(res, 200, loadCategoryRules(user.id));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/category-rules") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de criar regras de categoria." });
+      const body = await readJson(req);
+      const saved = saveCategoryRule(user.id, body.merchantPattern || body.merchant_pattern || "", String(body.category || "").trim());
+      if (saved.error) return send(res, 400, { error: saved.error });
+      audit(user.id, "CATEGORY_RULE_SAVED", { merchantPattern: saved.merchant_pattern, category: saved.category }, req);
+      return send(res, 201, saved);
+    }
+
+    const categoryRuleMatch = url.pathname.match(/^\/api\/category-rules\/(\d+)$/);
+    if (categoryRuleMatch && req.method === "PUT") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de alterar regras de categoria." });
+      const id = Number(categoryRuleMatch[1]);
+      const existing = db.prepare("SELECT id FROM category_rules WHERE id = ? AND user_id = ?").get(id, user.id);
+      if (!existing) return send(res, 404, { error: "Regra não encontrada." });
+      const body = await readJson(req);
+      const pattern = normalizeDescription(body.merchantPattern || body.merchant_pattern || "");
+      const category = String(body.category || "").trim();
+      if (pattern.length < 3) return send(res, 400, { error: "Informe um padrão com pelo menos 3 caracteres." });
+      if (!category || ["Categoria pendente", "Receita"].includes(category) || !categoryExists(user.id, category)) {
+        return send(res, 400, { error: "Escolha uma categoria de gasto válida." });
+      }
+      db.prepare("UPDATE category_rules SET merchant_pattern = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+        .run(pattern.slice(0, 80), category, id, user.id);
+      db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+      audit(user.id, "CATEGORY_RULE_UPDATED", { ruleId: id, merchantPattern: pattern, category }, req);
+      return send(res, 200, { ok: true });
+    }
+
+    if (categoryRuleMatch && req.method === "DELETE") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de excluir regras de categoria." });
+      const id = Number(categoryRuleMatch[1]);
+      const existing = db.prepare("SELECT merchant_pattern, category FROM category_rules WHERE id = ? AND user_id = ?").get(id, user.id);
+      if (!existing) return send(res, 404, { error: "Regra não encontrada." });
+      db.prepare("DELETE FROM category_rules WHERE id = ? AND user_id = ?").run(id, user.id);
+      db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+      audit(user.id, "CATEGORY_RULE_DELETED", { ruleId: id, merchantPattern: existing.merchant_pattern, category: existing.category }, req);
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === "GET" && url.pathname === "/api/category-suggest") {

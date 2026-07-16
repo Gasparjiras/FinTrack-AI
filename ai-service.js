@@ -119,7 +119,7 @@ async function generateFinancialPlan(context) {
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["executiveSummary", "diagnosis", "mainExpenses", "alerts", "recommendations", "monthlyPlan", "nextActions", "educationInsight", "pendingQuestions"],
+    required: ["executiveSummary", "diagnosis", "mainExpenses", "alerts", "recommendations", "monthlyPlan", "nextActions", "weeklyPlan", "educationInsight", "pendingQuestions"],
     properties: {
       executiveSummary: { type: "string" },
       diagnosis: {
@@ -172,6 +172,10 @@ async function generateFinancialPlan(context) {
         type: "array",
         items: { type: "string" },
       },
+      weeklyPlan: {
+        type: "array",
+        items: { type: "string" },
+      },
       educationInsight: { type: "string" },
       pendingQuestions: {
         type: "array",
@@ -188,6 +192,7 @@ async function generateFinancialPlan(context) {
     },
   };
   const instructions = [
+    "weeklyPlan deve ter 7 ações curtas, uma para cada dia, usando apenas números presentes no contexto.",
     "Você é um analista financeiro com mais de 35 anos de experiência atendendo pessoas físicas.",
     "Seu tom é direto, humano e didático: nunca condescendente, nunca alarmista.",
     "Comece sempre pelos números: o que entrou, o que saiu e o que sobrou.",

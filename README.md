@@ -21,19 +21,29 @@ Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma tra
 - Sugestao automatica de categoria com regras locais e regras aprendidas.
 - Importacao de CSV, XLSX, XLS e PDF, com previa antes de salvar.
 - Mapeamento manual de colunas quando o arquivo usa nomes diferentes.
+- Assistente de importacao com resumo de entradas, saidas, duplicadas e categorias pendentes.
+- Correcao em lote na importacao para aplicar categoria apenas nas pendentes ou nas selecionadas.
 - Inferencia reforcada de entrada/saida na importacao para evitar gastos positivos quando a planilha vem sem sinal negativo.
 - Deteccao de transacoes duplicadas antes da importacao.
+- Regras aprendidas visiveis em Configuracoes, com criacao e exclusao de padroes como "spotify -> Assinaturas".
 - Categorias com limites, status e alerta visual quando o orcamento e ultrapassado.
 - Graficos com Chart.js e estados vazios quando nao ha dados suficientes.
 - Donut de gastos por categoria com tooltip exibindo categoria, valor e percentual.
 - Metas financeiras com linha do tempo, meses restantes, esperado hoje, diferenca do plano e modos leve, equilibrado e agressivo.
 - Historico de aportes por meta, com agrupamento mensal e exclusao de aporte especifico.
-- Analise com IA/local com diagnostico, principais gastos, alertas, oportunidades de economia, plano da meta e proximas acoes.
+- Analise com IA/local com diagnostico, principais gastos, alertas, oportunidades de economia, plano da meta, plano de 7 dias e proximas acoes.
+- Comparacao mensal automatica, mostrando evolucao entre o mes atual e o anterior.
+- Fechamento mensal, salvando um retrato do periodo sem apagar dados.
+- Deteccao de transacoes recorrentes como assinaturas e contas fixas.
+- Pontuacao financeira interna de 0 a 100 para acompanhar saude financeira.
 - Cache de analise da IA por hash mensal, reduzindo chamadas repetidas quando os dados nao mudam.
+- Botao para usar analise salva/cache e botao separado para gerar nova analise OpenAI.
+- Status da OpenAI, mostrando se a IA esta ativa, local, em cache e quantas requisicoes restam no dia.
 - Minha atividade em Configuracoes, mostrando logs de auditoria do usuario.
 - Revogacao de consentimento LGPD com limpeza dos dados financeiros sem excluir a conta.
 - Exportacao dos dados do titular em JSON.
 - Exportacao de relatorio CSV e relatorio pronto para imprimir/salvar como PDF pelo navegador.
+- Modo apresentacao para banca, com dados reais quando existirem ou dados demonstrativos opcionais sem gravar no banco.
 - Exclusao completa da conta mediante senha.
 
 ## Open Finance no TCC
@@ -60,11 +70,11 @@ Crie `.env` a partir de `.env.example`:
 
 ```text
 OPENAI_API_KEY=sua_chave_aqui
-OPENAI_MODEL=gpt-5-nano
+OPENAI_MODEL=coloque_aqui_um_modelo_disponivel_na_sua_conta
 OPENAI_DAILY_LIMIT=10
 ```
 
-Para usar a analise com IA, configure sua chave da OpenAI e um modelo disponivel na sua conta. `gpt-5-nano` e uma opcao leve para classificacao e analises curtas; voce pode trocar por outro modelo depois. A chave fica apenas no backend e nunca e enviada ao frontend.
+Para usar a analise com IA, configure sua chave da OpenAI e um modelo real disponivel na sua conta. A chave fica apenas no backend e nunca e enviada ao frontend. Sem chave/modelo, o app continua funcionando com analise local.
 
 Se `OPENAI_API_KEY` existir mas `OPENAI_MODEL` estiver vazio, o backend mostra no terminal:
 
@@ -72,7 +82,7 @@ Se `OPENAI_API_KEY` existir mas `OPENAI_MODEL` estiver vazio, o backend mostra n
 OPENAI_MODEL nao configurado no .env.
 ```
 
-Sem chave/modelo, o app continua funcionando com analise local.
+Use o limite diario (`OPENAI_DAILY_LIMIT`) para proteger custo durante testes e apresentacao do TCC.
 
 ## Como Rodar
 
@@ -100,13 +110,14 @@ http://localhost:3000
 1. Cadastre uma conta e aceite o termo LGPD.
 2. Cadastre uma renda manualmente ou importe um CSV/Excel.
 3. Confirme a previa da importacao antes de salvar.
-4. Cadastre uma meta financeira.
-5. Abra o Dashboard para ver KPIs e graficos.
-6. Abra Analise com IA e clique em "Analisar gastos".
-7. Registre um aporte na meta e veja o historico mensal na aba Metas.
-8. Abra Relatorios e gere CSV ou "Relatorio PDF" para salvar pelo navegador.
-9. Abra Configuracoes para ver "Minha atividade".
-10. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
+4. Se houver pendencias, use a correcao em lote para classificar apenas o que precisa.
+5. Cadastre uma meta financeira.
+6. Abra o Dashboard para ver KPIs, recorrencias, score e graficos.
+7. Abra Analise com IA e clique em "Usar analise salva" ou "Gerar nova analise".
+8. Registre um aporte na meta e veja o historico mensal na aba Metas.
+9. Abra Relatorios, feche o mes e gere CSV, PDF ou modo apresentacao.
+10. Abra Configuracoes para ver "Minha atividade", regras aprendidas e status da IA.
+11. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
 
 ## Formato Recomendado para CSV/Excel
 

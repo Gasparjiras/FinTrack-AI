@@ -40,6 +40,9 @@ const reportRecurringList = document.querySelector("#reportRecurringList");
 const goalTimelineList = document.querySelector("#goalTimelineList");
 const openAiStatusPanel = document.querySelector("#openAiStatusPanel");
 const settingsAiStatusPanel = document.querySelector("#settingsAiStatusPanel");
+const refreshAiBtn = document.querySelector("#refreshAiBtn");
+const categoryRuleForm = document.querySelector("#categoryRuleForm");
+const categoryRulesList = document.querySelector("#categoryRulesList");
 const currentMonthLabel = document.querySelector("#currentMonth");
 const analysisMonthInput = document.querySelector("#analysisMonth");
 const prevMonthBtn = document.querySelector("#prevMonthBtn");
@@ -80,8 +83,11 @@ let importRows = [];
 let importMapping = {};
 let importSource = "importado";
 let importPreset = null;
+let importPreviewSummary = {};
+let importPreviewErrors = [];
 let monthlyClosings = [];
 let aiStatusSnapshot = null;
+let categoryRules = [];
 let userConsentAccepted = true;
 let categoryManuallyChanged = false;
 let suggestionTimer = null;
@@ -559,6 +565,16 @@ async function loadCategories() {
   updateBudgetStatus();
 }
 
+async function loadCategoryRules() {
+  if (!categoryRulesList) return;
+  try {
+    categoryRules = await api("/api/category-rules");
+  } catch {
+    categoryRules = [];
+  }
+  renderCategoryRules();
+}
+
 function renderCategoryOptions() {
   const select = transactionForm.elements.category;
   const current = select.value;
@@ -566,6 +582,16 @@ function renderCategoryOptions() {
     `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`
   )).join("")}`;
   if ([...select.options].some((option) => option.value === current)) select.value = current;
+  const ruleSelect = categoryRuleForm?.elements.category;
+  if (ruleSelect) {
+    const ruleCurrent = ruleSelect.value;
+    ruleSelect.innerHTML = `<option value="">Categoria</option>${categories
+      .map((item) => item.name)
+      .filter((name) => !["Receita", "Metas", "Categoria pendente"].includes(name))
+      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+      .join("")}`;
+    if ([...ruleSelect.options].some((option) => option.value === ruleCurrent)) ruleSelect.value = ruleCurrent;
+  }
 }
 
 function renderCategoryCards() {
@@ -594,6 +620,23 @@ function renderCategoryCards() {
       </article>
     `;
   }).join("");
+  refreshIcons();
+}
+
+function renderCategoryRules() {
+  if (!categoryRulesList) return;
+  if (!categoryRules.length) {
+    categoryRulesList.innerHTML = `<div class="empty-compact">Nenhuma regra aprendida ainda. Corrija categorias na importação ou salve uma regra manualmente.</div>`;
+    return;
+  }
+  categoryRulesList.innerHTML = categoryRules.map((rule) => `
+    <article class="rule-row">
+      <span class="rule-icon"><i data-lucide="${categoryIcon(rule.category)}"></i></span>
+      <div><strong>${escapeHtml(rule.merchant_pattern)}</strong><small>${escapeHtml(rule.category)}</small></div>
+      <button type="button" class="icon-button secondary" data-rule-use="${rule.id}" title="Editar regra"><i data-lucide="pencil"></i></button>
+      <button type="button" class="icon-button delete-button" data-rule-delete="${rule.id}" title="Excluir regra"><i data-lucide="trash-2"></i></button>
+    </article>
+  `).join("");
   refreshIcons();
 }
 
@@ -643,6 +686,45 @@ categoryForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#cancelCategoryBtn").addEventListener("click", resetCategoryForm);
+
+categoryRuleForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = formData(categoryRuleForm);
+  if (!data.merchantPattern || !data.category) return toast("Informe o padrão e a categoria da regra.");
+  try {
+    await api("/api/category-rules", { method: "POST", body: JSON.stringify(data) });
+    toast("Regra aprendida salva.");
+    categoryRuleForm.reset();
+    await loadCategoryRules();
+    await refreshFinancialData();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
+categoryRulesList?.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const id = button.dataset.ruleUse || button.dataset.ruleDelete;
+  const rule = categoryRules.find((item) => String(item.id) === String(id));
+  if (!rule) return;
+  if (button.dataset.ruleUse) {
+    categoryRuleForm.elements.merchantPattern.value = rule.merchant_pattern;
+    categoryRuleForm.elements.category.value = rule.category;
+    categoryRuleForm.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  if (button.dataset.ruleDelete && confirm("Excluir esta regra aprendida?")) {
+    try {
+      await api(`/api/category-rules/${id}`, { method: "DELETE" });
+      toast("Regra excluída.");
+      await loadCategoryRules();
+      await loadAnalysis(false);
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+});
 
 function resetCategoryForm() {
   categoryForm.reset();
@@ -1005,9 +1087,27 @@ document.querySelector("#analyzeBtn").addEventListener("click", async (event) =>
   }
 });
 
-async function loadAnalysis(useAI) {
+refreshAiBtn?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = `<span class="button-spinner"></span><span>Gerando...</span>`;
+  try {
+    await loadAnalysis(true, { refreshAI: true });
+    toast("Nova análise gerada.");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+    refreshIcons();
+  }
+});
+
+async function loadAnalysis(useAI, options = {}) {
   const params = new URLSearchParams({ month: selectedAnalysisMonth });
   if (useAI) params.set("useAI", "1");
+  if (options.refreshAI) params.set("refreshAI", "1");
   analysis = await api(`/api/ai/analysis?${params.toString()}`);
   if (analysis.selectedMonth) {
     selectedAnalysisMonth = analysis.selectedMonth;
@@ -1219,6 +1319,7 @@ function renderAIReport() {
     <div class="ai-section"><h3>Oportunidades de economia</h3><div class="recommendations">${recommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}</div></div>
     ${renderBudgetSuggestionBlock()}
     ${renderGoalPlanBlock(ai)}
+    ${renderWeeklyPlanBlock(ai)}
     ${renderEducationInsightBlock(ai)}
     ${renderTextBlock("Próximas ações recomendadas", blocks.nextActions, "list-checks")}
   `;
@@ -1259,6 +1360,24 @@ function renderMonthlyComparisonBlock() {
             </article>
           `;
         }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderWeeklyPlanBlock(ai) {
+  const items = (ai?.weeklyPlan?.length ? ai.weeklyPlan : analysis?.aiBlocks?.weeklyPlan || []).filter(Boolean).slice(0, 7);
+  if (!items.length) return "";
+  return `
+    <div class="ai-section weekly-plan-block">
+      <h3>Plano de 7 dias</h3>
+      <div class="weekly-plan-list">
+        ${items.map((item, index) => `
+          <article>
+            <span>${index + 1}</span>
+            <p>${escapeHtml(item)}</p>
+          </article>
+        `).join("")}
       </div>
     </div>
   `;
@@ -1888,6 +2007,7 @@ function objectiveLabel(value) {
 async function refreshFinancialData() {
   await loadTransactions();
   await loadCategories();
+  await loadCategoryRules();
   await loadAnalysis(false);
   await loadMonthlyClosings();
 }
@@ -1989,6 +2109,7 @@ function printReportPdf() {
   const aiText = analysis.ai?.executiveSummary || localSummary();
   const score = analysis.financialScore || {};
   const recurring = analysis.recurring || [];
+  const weeklyPlan = (analysis.ai?.weeklyPlan?.length ? analysis.ai.weeklyPlan : analysis.aiBlocks?.weeklyPlan || []).slice(0, 7);
   const html = `
     <!doctype html>
     <html lang="pt-BR">
@@ -2011,6 +2132,8 @@ function printReportPdf() {
           th { color: #6F766F; text-transform: uppercase; font-size: 10px; }
           .negative { color: #C0392B; }
           .positive { color: #1F8A5F; }
+          .weekly { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .weekly div { border: 1px solid #DDD8CE; border-radius: 14px; padding: 12px; background: #FBFAF6; }
           @media print { body { background: #fff; padding: 0; } .page { border: 0; border-radius: 0; } }
         </style>
       </head>
@@ -2028,6 +2151,8 @@ function printReportPdf() {
           </section>
           <h2>Análise</h2>
           <p>${escapeHtml(aiText)}</p>
+          <h2>Plano de 7 dias</h2>
+          <div class="weekly">${weeklyPlan.map((item, index) => `<div><strong>Dia ${index + 1}</strong><p>${escapeHtml(item)}</p></div>`).join("") || `<div><p>Gere uma análise para criar o plano semanal.</p></div>`}</div>
           ${goal ? `<h2>Meta principal</h2><div class="grid"><div class="card"><span>Nome</span><strong>${escapeHtml(goal.goal_name)}</strong></div><div class="card"><span>Aporte ideal</span><strong>${currency.format(goal.monthlyTarget || 0)}</strong></div><div class="card"><span>Esperado hoje</span><strong>${currency.format(goal.expectedSavedNow || 0)}</strong></div><div class="card"><span>Status</span><strong>${escapeHtml(goal.status)}</strong></div></div>` : ""}
           <h2>Transações recorrentes</h2>
           <table><thead><tr><th>Descrição</th><th>Categoria</th><th>Estimativa mensal</th><th>Confiança</th></tr></thead><tbody>${recurring.slice(0, 8).map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.category || "-")}</td><td>${currency.format(item.monthlyEstimate || item.total || 0)}</td><td>${escapeHtml(confidenceLabel(item.confidence || "media"))}</td></tr>`).join("") || `<tr><td colspan="4">Sem recorrências detectadas.</td></tr>`}</tbody></table>
@@ -2060,6 +2185,7 @@ function openPresentationMode() {
   const topCategories = (data.categories || []).slice(0, 5);
   const score = data.financialScore || { score: 0, label: "Sem dados", summary: "Sem dados suficientes." };
   const recurring = data.recurring || [];
+  const weeklyPlan = (data.ai?.weeklyPlan || data.aiBlocks?.weeklyPlan || data.weeklyPlan || []).slice(0, 7);
   const html = `
     <!doctype html>
     <html lang="pt-BR">
@@ -2098,6 +2224,7 @@ function openPresentationMode() {
             <article class="card"><span>Saúde financeira</span><strong>${score.score}/100</strong><p>${escapeHtml(score.label)}</p></article>
             <article class="card wide"><h2>Top categorias</h2><div class="list">${topCategories.map((item) => `<div class="row"><span>${escapeHtml(item.category)}</span><strong>${currency.format(item.total || 0)} • ${item.share || 0}%</strong></div>`).join("") || "Sem categorias."}</div></article>
             <article class="card wide"><h2>Recorrências detectadas</h2><div class="list">${recurring.slice(0, 5).map((item) => `<div class="row"><span>${escapeHtml(item.description)}</span><strong>${currency.format(item.monthlyEstimate || item.total || 0)}/mês</strong></div>`).join("") || "Sem recorrências detectadas."}</div></article>
+            <article class="card wide"><h2>Plano de 7 dias</h2><div class="list">${weeklyPlan.map((item, index) => `<div class="row"><span>Dia ${index + 1}</span><strong>${escapeHtml(item)}</strong></div>`).join("") || "Gere uma análise para criar o plano semanal."}</div></article>
             <article class="card wide"><h2>Meta principal</h2><p>${data.goal ? `${escapeHtml(data.goal.goal_name)}: ${data.goal.progressPercentage}% concluída. Falta ${currency.format(data.goal.remainingAmount || 0)}.` : "Nenhuma meta cadastrada."}</p></article>
             <article class="card wide"><h2>Observação LGPD</h2><p>Sem Open Finance real: dados são inseridos manualmente ou importados pelo usuário. A opção demonstrativa do modo apresentação não grava dados no banco.</p></article>
           </section>
@@ -2126,6 +2253,15 @@ function demoPresentationAnalysis() {
     recurring: [
       { description: "Spotify Premium", monthlyEstimate: 21.9, category: "Assinaturas" },
       { description: "Internet residencial", monthlyEstimate: 119.9, category: "Contas fixas" },
+    ],
+    weeklyPlan: [
+      "Revise Mercado, a maior categoria do exemplo.",
+      "Confirme se todas as despesas estão categorizadas.",
+      "Separe o aporte da reserva no início do mês.",
+      "Reduza delivery por uma semana.",
+      "Revise assinaturas recorrentes.",
+      "Compare gastos com o mês anterior.",
+      "Feche o mês e registre o aprendizado.",
     ],
     financialScore: { score: 74, label: "Boa", summary: "Exemplo acadêmico." },
     goal: { goal_name: "Reserva de emergência", progressPercentage: 38, remainingAmount: 6200 },
@@ -2225,6 +2361,8 @@ buildImportPreviewBtn?.addEventListener("click", async () => {
 
 function renderImportPreview(items, notice, summary = {}, errors = []) {
   importCandidates = items || [];
+  importPreviewSummary = summary || {};
+  importPreviewErrors = errors || [];
   importNotice.textContent = notice || "";
   const ai = summary.ai || {};
   const aiLabel = ai.source === "openai"
@@ -2255,6 +2393,16 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
       <div>
         <strong>Assistente de importação</strong>
         <p>Detectei ${incomeCount} entrada(s), ${expenseCount} saída(s), ${duplicateCount} duplicada(s) e ${pendingCount} categoria(s) pendente(s). Revise só o que estiver pendente ou diferente do esperado antes de confirmar.</p>
+        <div class="import-bulk-tools">
+          <label>Aplicar categoria
+            <select data-import-bulk-category>
+              <option value="">Escolha</option>
+              ${importBulkCategoryOptions()}
+            </select>
+          </label>
+          <button type="button" class="secondary" data-import-bulk="pending">Aplicar nas pendentes</button>
+          <button type="button" class="secondary" data-import-bulk="selected">Aplicar nas selecionadas</button>
+        </div>
       </div>
     `;
   }
@@ -2278,6 +2426,14 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
   setHidden(importPreviewCard, false);
   setHidden(confirmImportBtn, importCandidates.filter((item) => !item.duplicate).length === 0);
   refreshIcons();
+}
+
+function importBulkCategoryOptions() {
+  return categories
+    .map((item) => item.name)
+    .filter((name) => !["Receita", "Metas", "Categoria pendente"].includes(name))
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
 }
 
 function typeOptions(value) {
@@ -2311,6 +2467,31 @@ importPreviewBody.addEventListener("change", (event) => {
   }
 });
 
+importAssistant?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-import-bulk]");
+  if (!button) return;
+  const category = importAssistant.querySelector("[data-import-bulk-category]")?.value;
+  if (!category) return toast("Escolha uma categoria para aplicar em lote.");
+  const mode = button.dataset.importBulk;
+  const checkedIndexes = new Set([...importPreviewBody.querySelectorAll("tr")]
+    .filter((row) => row.querySelector(".preview-check")?.checked)
+    .map((row) => Number(row.dataset.index)));
+  let changed = 0;
+  importCandidates.forEach((item, index) => {
+    if (!item || item.duplicate) return;
+    const shouldApply = mode === "pending"
+      ? item.category === "Categoria pendente"
+      : checkedIndexes.has(index);
+    if (!shouldApply) return;
+    item.category = category;
+    item.userCorrected = true;
+    item.confidence = "corrigida pelo usuário";
+    changed += 1;
+  });
+  renderImportPreview(importCandidates, importNotice.textContent, importPreviewSummary, importPreviewErrors);
+  toast(`${changed} lançamento(s) atualizado(s) em lote.`);
+});
+
 confirmImportBtn.addEventListener("click", async () => {
   const selected = [...importPreviewBody.querySelectorAll("tr")]
     .filter((row) => row.querySelector(".preview-check")?.checked)
@@ -2341,6 +2522,9 @@ function auditMessage(row) {
     CATEGORY_CREATED: `Categoria criada${details.name ? `: ${details.name}` : ""}`,
     CATEGORY_UPDATED: `Categoria atualizada${details.name ? `: ${details.name}` : ""}`,
     CATEGORY_DELETED: `Categoria excluída${details.name ? `: ${details.name}` : ""}`,
+    CATEGORY_RULE_SAVED: `Regra aprendida salva${details.merchantPattern ? `: ${details.merchantPattern}` : ""}`,
+    CATEGORY_RULE_UPDATED: `Regra aprendida atualizada${details.merchantPattern ? `: ${details.merchantPattern}` : ""}`,
+    CATEGORY_RULE_DELETED: `Regra aprendida excluída${details.merchantPattern ? `: ${details.merchantPattern}` : ""}`,
     TRANSACTION_CREATED: "Transação criada",
     TRANSACTION_UPDATED: "Transação editada",
     TRANSACTION_DELETED: "Transação excluída",
@@ -2494,6 +2678,7 @@ async function boot(options = {}) {
       }
       await loadTransactions();
       await loadGoal();
+      await loadCategoryRules();
       await loadAnalysis(false);
       await loadAIStatus();
       await loadMonthlyClosings();
