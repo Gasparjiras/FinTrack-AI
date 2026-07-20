@@ -46,6 +46,7 @@ const ALLOWED_CATEGORIES = [
 ];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+backupLocalDatabase();
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON");
 db.exec("PRAGMA journal_mode = WAL");
@@ -120,6 +121,8 @@ db.exec(`
     planned_monthly_savings REAL NOT NULL DEFAULT 0,
     target_months INTEGER NOT NULL,
     intensity TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    is_primary INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -134,9 +137,22 @@ db.exec(`
     contribution_date TEXT NOT NULL,
     note TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (goal_id) REFERENCES financial_goals(id) ON DELETE CASCADE,
     FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS goal_change_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    goal_id INTEGER,
+    action TEXT NOT NULL,
+    previous_json TEXT,
+    next_json TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (goal_id) REFERENCES financial_goals(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS categories (
@@ -181,6 +197,20 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS ai_analysis_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    month TEXT NOT NULL,
+    source TEXT NOT NULL,
+    model TEXT,
+    summary TEXT,
+    request_json TEXT,
+    response_json TEXT,
+    is_official INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS monthly_closings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -207,10 +237,26 @@ function ensureColumn(table, column, definition) {
   if (!columns.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
+function backupLocalDatabase() {
+  if (!fs.existsSync(DB_PATH)) return;
+  const stats = fs.statSync(DB_PATH);
+  if (!stats.size) return;
+  const backupDir = path.join(DATA_DIR, "backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().slice(0, 10);
+  const backupPath = path.join(backupDir, `app-${stamp}.db`);
+  if (!fs.existsSync(backupPath)) {
+    fs.copyFileSync(DB_PATH, backupPath);
+  }
+}
+
 ensureColumn("user_goals", "saved_amount", "REAL NOT NULL DEFAULT 0");
 ensureColumn("user_goals", "goal_name", "TEXT NOT NULL DEFAULT 'Meta financeira'");
 ensureColumn("user_goals", "planned_monthly_savings", "REAL NOT NULL DEFAULT 0");
 ensureColumn("financial_goals", "initial_saved_amount", "REAL NOT NULL DEFAULT 0");
+ensureColumn("financial_goals", "priority", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("financial_goals", "is_primary", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("goal_contributions", "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 ensureColumn("user_consents", "revoked_at", "TEXT");
 ensureColumn("transactions", "type", "TEXT NOT NULL DEFAULT 'saida'");
 ensureColumn("transactions", "classification_confidence", "TEXT NOT NULL DEFAULT 'manual'");
@@ -219,6 +265,7 @@ ensureColumn("transactions", "payment_method", "TEXT NOT NULL DEFAULT 'Manual'")
 ensureColumn("transactions", "transaction_status", "TEXT NOT NULL DEFAULT 'Concluida'");
 ensureColumn("transactions", "source", "TEXT NOT NULL DEFAULT 'manual'");
 ensureColumn("transactions", "external_id", "TEXT");
+ensureColumn("transactions", "note", "TEXT NOT NULL DEFAULT ''");
 
 const legacyGoals = db.prepare("SELECT * FROM user_goals").all();
 for (const goal of legacyGoals) {
@@ -1074,6 +1121,10 @@ function cleanTransactionStatus(value) {
   return allowed.includes(text) ? text : "Concluida";
 }
 
+function cleanTransactionNote(value) {
+  return String(value || "").trim().slice(0, 160);
+}
+
 function parseTransactionsFromText(text, learnedRules = []) {
   const rawText = String(text || "");
   const fallbackYear = Number((rawText.match(/\b(20\d{2})\b/) || [])[1]) || new Date().getFullYear();
@@ -1726,10 +1777,10 @@ function goalPreview(goal) {
 
 function getUserGoals(userId) {
   return db.prepare(`
-    SELECT id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity, created_at, updated_at
+    SELECT id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity, priority, is_primary, created_at, updated_at
     FROM financial_goals
     WHERE user_id = ?
-    ORDER BY CASE WHEN saved_amount < target_value THEN 0 ELSE 1 END, updated_at DESC, id DESC
+    ORDER BY is_primary DESC, priority ASC, CASE WHEN saved_amount < target_value THEN 0 ELSE 1 END, updated_at DESC, id DESC
   `).all(userId).map(goalPreview);
 }
 
@@ -1752,6 +1803,44 @@ function getGoalContributionSummary(userId) {
     GROUP BY goal_id, month
     ORDER BY month DESC
   `).all(userId);
+}
+
+function recordGoalHistory(userId, goalId, action, previousValue, nextValue) {
+  db.prepare(`
+    INSERT INTO goal_change_history (user_id, goal_id, action, previous_json, next_json)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    userId,
+    goalId || null,
+    action,
+    previousValue ? JSON.stringify(previousValue) : null,
+    nextValue ? JSON.stringify(nextValue) : null,
+  );
+}
+
+function getGoalChangeHistory(userId, limit = 80) {
+  return db.prepare(`
+    SELECT gch.id, gch.goal_id, gch.action, gch.previous_json, gch.next_json, gch.created_at, fg.goal_name
+    FROM goal_change_history gch
+    LEFT JOIN financial_goals fg ON fg.id = gch.goal_id AND fg.user_id = gch.user_id
+    WHERE gch.user_id = ?
+    ORDER BY gch.id DESC
+    LIMIT ?
+  `).all(userId, limit).map((row) => ({
+    ...row,
+    previous: safeJson(row.previous_json),
+    next: safeJson(row.next_json),
+    previous_json: undefined,
+    next_json: undefined,
+  }));
+}
+
+function safeJson(value) {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
 }
 
 function getPrimaryGoal(userId) {
@@ -2234,6 +2323,69 @@ async function getPersonalizedAIPlan(userId, transactions, goal, localAnalysis, 
   }
 }
 
+function summarizeOpenAIRequest(localAnalysis) {
+  const categories = (localAnalysis.categoryRanking || localAnalysis.categories || []).slice(0, 8).map((item) => ({
+    categoria: item.category,
+    valor: Number(item.total || 0),
+    percentual: Number(item.share || 0),
+  }));
+  const suggestions = (localAnalysis.categoryBudgetSuggestions || []).slice(0, 8).map((item) => ({
+    categoria: item.category,
+    gastoAtualMensal: item.currentMonthly,
+    valorSugeridoMensal: item.suggestedMonthly,
+    diferenca: item.difference,
+  }));
+  return {
+    periodo: localAnalysis.selectedMonth,
+    totais: {
+      entradas: localAnalysis.totalIncome,
+      saidas: localAnalysis.totalExpenses,
+      saldo: localAnalysis.balance,
+      pendentes: localAnalysis.pendingCount,
+    },
+    metaPrincipal: localAnalysis.goal ? {
+      nome: localAnalysis.goal.goal_name,
+      valorTotal: localAnalysis.goal.target_value,
+      guardado: localAnalysis.goal.saved_amount,
+      falta: localAnalysis.goal.remainingAmount,
+      aporteIdeal: localAnalysis.goal.monthlyTarget,
+      prazoFinal: localAnalysis.goal.targetConclusion,
+      status: localAnalysis.goal.status,
+    } : null,
+    principaisCategorias: categories,
+    sugestoesPorCategoria: suggestions,
+    comparacaoMensal: localAnalysis.monthlyComparison || null,
+    recorrencias: (localAnalysis.recurring || []).slice(0, 6).map((item) => ({
+      descricao: item.description,
+      categoria: item.category,
+      estimativaMensal: item.monthlyEstimate || item.total,
+      confianca: item.confidence,
+    })),
+  };
+}
+
+function saveAIAnalysisHistory(userId, localAnalysis, aiResult, requestSummary) {
+  const source = aiResult?.source || "local";
+  const response = aiResult?.plan || {
+    executiveSummary: (localAnalysis.insights || []).slice(0, 2).join(" "),
+    local: true,
+  };
+  const summary = response.executiveSummary || (localAnalysis.insights || [])[0] || "Análise financeira registrada.";
+  const result = db.prepare(`
+    INSERT INTO ai_analysis_history (user_id, month, source, model, summary, request_json, response_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    userId,
+    localAnalysis.selectedMonth,
+    source,
+    aiResult?.model || null,
+    String(summary || "").slice(0, 500),
+    JSON.stringify(requestSummary),
+    JSON.stringify(response),
+  );
+  return result.lastInsertRowid;
+}
+
 function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, goal, analysisMonth) {
   const currentMonth = normalizeMonthParam(analysisMonth) || new Date().toISOString().slice(0, 7);
   const monthTransactions = filterTransactionsForMonth(transactions, currentMonth);
@@ -2298,10 +2450,12 @@ function validateTransaction(input) {
   const value = Number(input.value);
   const date = String(input.date || "").trim();
   const category = String(input.category || "").trim();
+  const note = String(input.note || "").trim();
   if (!description || description.length > 120) return "Descrição obrigatória com até 120 caracteres.";
   if (!Number.isFinite(value) || value === 0) return "Valor deve ser numérico e diferente de zero.";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "Data deve estar no formato AAAA-MM-DD.";
   if (!category || category.length > 40) return "Categoria obrigatória com até 40 caracteres.";
+  if (note.length > 160) return "Observação deve ter até 160 caracteres.";
   return null;
 }
 
@@ -2347,8 +2501,10 @@ function revokeConsentAndClearData(userId, req) {
     db.prepare("DELETE FROM financial_goals WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM ai_analysis_history WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_daily_usage WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM monthly_closings WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM goal_change_history WHERE user_id = ?").run(userId);
     db.prepare(`
       UPDATE user_consents
       SET revoked_at = CURRENT_TIMESTAMP
@@ -2527,7 +2683,7 @@ async function handleApi(req, res) {
       if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de cadastrar transações." });
 
       if (req.method === "GET" && url.pathname === "/api/transactions") {
-        const rows = db.prepare("SELECT id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, external_id, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC").all(user.id);
+        const rows = db.prepare("SELECT id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, external_id, note, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC").all(user.id);
         return send(res, 200, rows);
       }
 
@@ -2537,11 +2693,40 @@ async function handleApi(req, res) {
         if (validation) return send(res, 400, { error: validation });
         if (!categoryExists(user.id, body.category.trim())) return send(res, 400, { error: "Categoria não encontrada." });
         const meta = classificationMetadata(user.id, body.description.trim(), Number(body.value), body.category.trim());
-        const result = db.prepare("INSERT INTO transactions (user_id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(user.id, body.description.trim(), Number(body.value), body.date, body.category.trim(), meta.type, meta.classification_confidence, meta.classification_source, cleanPaymentMethod(body.paymentMethod || body.payment_method), cleanTransactionStatus(body.status || body.transaction_status), "manual");
+        const result = db.prepare("INSERT INTO transactions (user_id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(user.id, body.description.trim(), Number(body.value), body.date, body.category.trim(), meta.type, meta.classification_confidence, meta.classification_source, cleanPaymentMethod(body.paymentMethod || body.payment_method), cleanTransactionStatus(body.status || body.transaction_status), "manual", cleanTransactionNote(body.note));
         learnCategoryRule(user.id, body.description.trim(), body.category.trim());
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
         audit(user.id, "TRANSACTION_CREATED", { transactionId: result.lastInsertRowid }, req);
         return send(res, 201, { id: result.lastInsertRowid });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/transactions/bulk") {
+        const body = await readJson(req);
+        const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 250);
+        if (!ids.length) return send(res, 400, { error: "Selecione ao menos um lançamento." });
+        const placeholders = ids.map(() => "?").join(",");
+        if (body.action === "delete") {
+          const result = db.prepare(`DELETE FROM transactions WHERE user_id = ? AND id IN (${placeholders})`).run(user.id, ...ids);
+          db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+          audit(user.id, "TRANSACTIONS_BULK_DELETED", { deleted: result.changes }, req);
+          return send(res, 200, { deleted: result.changes });
+        }
+        if (body.action === "category") {
+          const category = String(body.category || "").trim();
+          if (!categoryExists(user.id, category) || ["Receita", "Metas", "Categoria pendente"].includes(category)) {
+            return send(res, 400, { error: "Escolha uma categoria de gasto válida." });
+          }
+          const result = db.prepare(`
+            UPDATE transactions
+            SET category = ?, classification_confidence = 'corrigida', classification_source = 'manual', updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND id IN (${placeholders})
+          `).run(category, user.id, ...ids);
+          db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+          audit(user.id, "TRANSACTIONS_BULK_CATEGORY_UPDATED", { updated: result.changes, category }, req);
+          return send(res, 200, { updated: result.changes });
+        }
+        return send(res, 400, { error: "Ação em massa inválida." });
       }
 
       const match = url.pathname.match(/^\/api\/transactions\/(\d+)$/);
@@ -2555,13 +2740,14 @@ async function handleApi(req, res) {
         const meta = classificationMetadata(user.id, body.description.trim(), Number(body.value), body.category.trim());
         const result = db.prepare(`
           UPDATE transactions
-          SET description = ?, value = ?, date = ?, category = ?, type = ?, classification_confidence = ?, classification_source = ?, payment_method = ?, transaction_status = ?, source = ?, updated_at = CURRENT_TIMESTAMP
+          SET description = ?, value = ?, date = ?, category = ?, type = ?, classification_confidence = ?, classification_source = ?, payment_method = ?, transaction_status = ?, source = ?, note = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ? AND user_id = ?
-        `).run(body.description.trim(), Number(body.value), body.date, body.category.trim(), meta.type, meta.classification_confidence, meta.classification_source, cleanPaymentMethod(body.paymentMethod || body.payment_method), cleanTransactionStatus(body.status || body.transaction_status), existing.source || "manual", Number(match[1]), user.id);
+        `).run(body.description.trim(), Number(body.value), body.date, body.category.trim(), meta.type, meta.classification_confidence, meta.classification_source, cleanPaymentMethod(body.paymentMethod || body.payment_method), cleanTransactionStatus(body.status || body.transaction_status), existing.source || "manual", cleanTransactionNote(body.note), Number(match[1]), user.id);
         if (result.changes === 0) return send(res, 404, { error: "Transação não encontrada." });
         if (existing.category !== body.category.trim()) {
           learnCategoryRule(user.id, body.description.trim(), body.category.trim());
         }
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
         audit(user.id, "TRANSACTION_UPDATED", { transactionId: Number(match[1]) }, req);
         return send(res, 200, { ok: true });
       }
@@ -2569,6 +2755,7 @@ async function handleApi(req, res) {
       if (match && req.method === "DELETE") {
         const result = db.prepare("DELETE FROM transactions WHERE id = ? AND user_id = ?").run(Number(match[1]), user.id);
         if (result.changes === 0) return send(res, 404, { error: "Transação não encontrada." });
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
         audit(user.id, "TRANSACTION_DELETED", { transactionId: Number(match[1]) }, req);
         return send(res, 200, { ok: true });
       }
@@ -2592,6 +2779,7 @@ async function handleApi(req, res) {
         contributions: getGoalContributions(user.id),
         contributionSummary,
         goalTimelines: buildGoalTimelines(goals, contributionSummary),
+        history: getGoalChangeHistory(user.id),
       });
     }
 
@@ -2607,6 +2795,8 @@ async function handleApi(req, res) {
       const savedAmount = Number(body.savedAmount || 0);
       const targetMonths = Number(body.targetMonths);
       const intensity = String(body.intensity || "").trim();
+      const priority = Math.max(0, Math.min(99, Number(body.priority || 0)));
+      const isPrimary = Boolean(body.isPrimary || body.is_primary);
       if (goalName.length < 3 || goalName.length > 80) return send(res, 400, { error: "Informe um nome de meta com 3 a 80 caracteres." });
       if (!["reserva", "dividas", "viagem", "compra", "investimento", "outro"].includes(objective)) {
         return send(res, 400, { error: "Selecione um objetivo válido." });
@@ -2621,23 +2811,56 @@ async function handleApi(req, res) {
       const baseMonthlyPlan = remainingForPlan / targetMonths;
       const plannedMonthlySavings = remainingForPlan > 0 ? Number(Math.max(baseMonthlyPlan * (modeMultipliers[intensity] || 1), 1).toFixed(2)) : 0;
       let savedGoalId = goalId;
+      let previousGoal = null;
       if (goalId > 0) {
-        const existing = db.prepare("SELECT id FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+        const existing = db.prepare("SELECT * FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
         if (!existing) return send(res, 404, { error: "Meta não encontrada." });
+        previousGoal = existing;
+        if (isPrimary) db.prepare("UPDATE financial_goals SET is_primary = 0 WHERE user_id = ?").run(user.id);
         db.prepare(`
           UPDATE financial_goals
-          SET goal_name = ?, objective = ?, target_value = ?, saved_amount = ?, planned_monthly_savings = ?, target_months = ?, intensity = ?, updated_at = CURRENT_TIMESTAMP
+          SET goal_name = ?, objective = ?, target_value = ?, saved_amount = ?, planned_monthly_savings = ?, target_months = ?, intensity = ?, priority = ?, is_primary = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ? AND user_id = ?
-        `).run(goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity, goalId, user.id);
+        `).run(goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity, priority, isPrimary ? 1 : existing.is_primary || 0, goalId, user.id);
+        const nextGoal = db.prepare("SELECT * FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+        recordGoalHistory(user.id, goalId, "GOAL_UPDATED", previousGoal, nextGoal);
       } else {
+        const existingGoalsCount = db.prepare("SELECT COUNT(*) AS count FROM financial_goals WHERE user_id = ?").get(user.id).count;
+        const shouldBePrimary = isPrimary || Number(existingGoalsCount || 0) === 0;
+        if (shouldBePrimary) db.prepare("UPDATE financial_goals SET is_primary = 0 WHERE user_id = ?").run(user.id);
         const result = db.prepare(`
-          INSERT INTO financial_goals (user_id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(user.id, goalName, objective, targetValue, savedAmount, savedAmount, plannedMonthlySavings, targetMonths, intensity);
+          INSERT INTO financial_goals (user_id, goal_name, objective, target_value, initial_saved_amount, saved_amount, planned_monthly_savings, target_months, intensity, priority, is_primary)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(user.id, goalName, objective, targetValue, savedAmount, savedAmount, plannedMonthlySavings, targetMonths, intensity, priority, shouldBePrimary ? 1 : 0);
         savedGoalId = result.lastInsertRowid;
+        const nextGoal = db.prepare("SELECT * FROM financial_goals WHERE id = ? AND user_id = ?").get(savedGoalId, user.id);
+        recordGoalHistory(user.id, savedGoalId, "GOAL_CREATED", null, nextGoal);
       }
       audit(user.id, "FINANCIAL_GOAL_UPDATED", { goalId: savedGoalId, goalName, objective, targetValue, savedAmount, plannedMonthlySavings, targetMonths, intensity }, req);
       return send(res, 200, { ok: true, id: savedGoalId });
+    }
+
+    const goalPrimaryMatch = url.pathname.match(/^\/api\/goal\/(\d+)\/primary$/);
+    if (goalPrimaryMatch && req.method === "POST") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de alterar metas financeiras." });
+      const goalId = Number(goalPrimaryMatch[1]);
+      const goal = db.prepare("SELECT * FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+      if (!goal) return send(res, 404, { error: "Meta não encontrada." });
+      db.exec("BEGIN");
+      try {
+        db.prepare("UPDATE financial_goals SET is_primary = 0 WHERE user_id = ?").run(user.id);
+        db.prepare("UPDATE financial_goals SET is_primary = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?").run(goalId, user.id);
+        const nextGoal = db.prepare("SELECT * FROM financial_goals WHERE id = ? AND user_id = ?").get(goalId, user.id);
+        recordGoalHistory(user.id, goalId, "GOAL_SET_PRIMARY", goal, nextGoal);
+        audit(user.id, "FINANCIAL_GOAL_PRIMARY_SET", { goalId, goalName: goal.goal_name }, req);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return send(res, 200, { ok: true });
     }
 
     const goalMatch = url.pathname.match(/^\/api\/goal\/(\d+)$/);
@@ -2651,6 +2874,7 @@ async function handleApi(req, res) {
       db.exec("BEGIN");
       try {
         db.prepare("DELETE FROM goal_contributions WHERE goal_id = ? AND user_id = ?").run(goal.id, user.id);
+        recordGoalHistory(user.id, goal.id, "GOAL_DELETED", goal, null);
         db.prepare("DELETE FROM financial_goals WHERE id = ? AND user_id = ?").run(goal.id, user.id);
         db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
         audit(user.id, "FINANCIAL_GOAL_DELETED", { goalId: goal.id, goalName: goal.goal_name }, req);
@@ -2692,6 +2916,13 @@ async function handleApi(req, res) {
           INSERT INTO goal_contributions (user_id, goal_id, transaction_id, amount, contribution_date, note)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(user.id, goal.id, result.lastInsertRowid, amount, date, note || null);
+        recordGoalHistory(user.id, goal.id, "GOAL_CONTRIBUTION_CREATED", null, {
+          contributionId: contribution.lastInsertRowid,
+          amount,
+          contribution_date: date,
+          note,
+          saved_amount: newSavedAmount,
+        });
         audit(user.id, "GOAL_CONTRIBUTION_CREATED", { goalId: goal.id, goalName: goal.goal_name, contributionId: contribution.lastInsertRowid, amount, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid }, req);
         db.exec("COMMIT");
         return send(res, 201, { ok: true, goalId: goal.id, contributionId: contribution.lastInsertRowid, savedAmount: newSavedAmount, transactionId: result.lastInsertRowid });
@@ -2702,6 +2933,72 @@ async function handleApi(req, res) {
     }
 
     const contributionMatch = url.pathname.match(/^\/api\/goal\/contributions\/(\d+)$/);
+    if (contributionMatch && req.method === "PUT") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (!hasConsent(user.id)) return send(res, 403, { error: "Aceite o termo antes de alterar metas financeiras." });
+      ensureDefaultCategories(user.id);
+      const contributionId = Number(contributionMatch[1]);
+      const body = await readJson(req);
+      const existing = db.prepare(`
+        SELECT gc.id, gc.goal_id, gc.transaction_id, gc.amount, gc.contribution_date, gc.note, fg.goal_name, fg.target_value, fg.saved_amount
+        FROM goal_contributions gc
+        JOIN financial_goals fg ON fg.id = gc.goal_id AND fg.user_id = gc.user_id
+        WHERE gc.id = ? AND gc.user_id = ?
+      `).get(contributionId, user.id);
+      if (!existing) return send(res, 404, { error: "Aporte não encontrado." });
+      const newGoalId = Number(body.goalId || body.goal_id || existing.goal_id);
+      const nextGoal = db.prepare("SELECT id, goal_name, target_value, saved_amount FROM financial_goals WHERE id = ? AND user_id = ?").get(newGoalId, user.id);
+      if (!nextGoal) return send(res, 404, { error: "Meta selecionada não encontrada." });
+      const amount = Math.abs(Number(body.amount));
+      const date = String(body.date || existing.contribution_date).trim();
+      const note = String(body.note || "").trim().slice(0, 80);
+      if (!Number.isFinite(amount) || amount <= 0) return send(res, 400, { error: "Informe um valor guardado maior que zero." });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: "Data deve estar no formato AAAA-MM-DD." });
+      db.exec("BEGIN");
+      try {
+        let oldGoalSaved = Number(existing.saved_amount || 0);
+        if (Number(existing.goal_id) === Number(nextGoal.id)) {
+          const updatedSaved = Math.min(Number(nextGoal.target_value || 0), Math.max(0, oldGoalSaved - Number(existing.amount || 0) + amount));
+          db.prepare("UPDATE financial_goals SET saved_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+            .run(updatedSaved, nextGoal.id, user.id);
+        } else {
+          db.prepare("UPDATE financial_goals SET saved_amount = MAX(saved_amount - ?, 0), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+            .run(Number(existing.amount || 0), existing.goal_id, user.id);
+          const updatedSaved = Math.min(Number(nextGoal.target_value || 0), Number(nextGoal.saved_amount || 0) + amount);
+          db.prepare("UPDATE financial_goals SET saved_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+            .run(updatedSaved, nextGoal.id, user.id);
+        }
+        db.prepare(`
+          UPDATE goal_contributions
+          SET goal_id = ?, amount = ?, contribution_date = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_id = ?
+        `).run(nextGoal.id, amount, date, note || null, existing.id, user.id);
+        if (existing.transaction_id) {
+          db.prepare(`
+            UPDATE transactions
+            SET description = ?, value = ?, date = ?, category = 'Metas', type = 'saida', payment_method = 'Meta financeira', transaction_status = 'Concluida', source = 'meta', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_id = ? AND source = 'meta'
+          `).run(note || `Guardado para meta - ${nextGoal.goal_name}`, -amount, date, existing.transaction_id, user.id);
+        }
+        db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+        recordGoalHistory(user.id, nextGoal.id, "GOAL_CONTRIBUTION_UPDATED", existing, {
+          contributionId: existing.id,
+          previousGoalId: existing.goal_id,
+          goalId: nextGoal.id,
+          amount,
+          contribution_date: date,
+          note,
+        });
+        audit(user.id, "GOAL_CONTRIBUTION_UPDATED", { goalId: nextGoal.id, goalName: nextGoal.goal_name, contributionId: existing.id, amount }, req);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return send(res, 200, { ok: true, goalId: nextGoal.id, contributionId: existing.id });
+    }
+
     if (contributionMatch && req.method === "DELETE") {
       const user = requireUser(req, res);
       if (!user) return;
@@ -2725,6 +3022,9 @@ async function handleApi(req, res) {
             .run(contribution.transaction_id, user.id);
         }
         db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
+        recordGoalHistory(user.id, contribution.goal_id, "GOAL_CONTRIBUTION_DELETED", contribution, {
+          saved_amount: newSavedAmount,
+        });
         audit(user.id, "GOAL_CONTRIBUTION_DELETED", {
           goalId: contribution.goal_id,
           goalName: contribution.goal_name,
@@ -2759,12 +3059,19 @@ async function handleApi(req, res) {
       localAnalysis.goalTimelines = goalTimelines;
       const useOpenAI = url.searchParams.get("useAI") === "1";
       const forceRefresh = url.searchParams.get("refreshAI") === "1";
+      const recordHistory = url.searchParams.get("record") === "1";
+      const requestSummary = summarizeOpenAIRequest(localAnalysis);
       const aiResult = useOpenAI
         ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis, { forceRefresh })
         : { plan: null, source: "local", model: null, cached: false, warning: null };
+      const historyId = recordHistory
+        ? saveAIAnalysisHistory(user.id, localAnalysis, aiResult, requestSummary)
+        : null;
       return send(res, 200, {
         ...localAnalysis,
         ai: aiResult.plan,
+        openAIRequestSummary: requestSummary,
+        aiHistoryId: historyId,
         aiStatus: {
           source: aiResult.source,
           model: aiResult.model,
@@ -2772,6 +3079,39 @@ async function handleApi(req, res) {
           warning: aiResult.warning,
         },
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ai/history") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const rows = db.prepare(`
+        SELECT id, month, source, model, summary, is_official, created_at
+        FROM ai_analysis_history
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 30
+      `).all(user.id);
+      return send(res, 200, rows);
+    }
+
+    const aiHistoryMatch = url.pathname.match(/^\/api\/ai\/history\/(\d+)\/official$/);
+    if (aiHistoryMatch && req.method === "POST") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const id = Number(aiHistoryMatch[1]);
+      const item = db.prepare("SELECT id, month FROM ai_analysis_history WHERE id = ? AND user_id = ?").get(id, user.id);
+      if (!item) return send(res, 404, { error: "Análise não encontrada." });
+      db.exec("BEGIN");
+      try {
+        db.prepare("UPDATE ai_analysis_history SET is_official = 0 WHERE user_id = ? AND month = ?").run(user.id, item.month);
+        db.prepare("UPDATE ai_analysis_history SET is_official = 1 WHERE id = ? AND user_id = ?").run(id, user.id);
+        audit(user.id, "AI_ANALYSIS_OFFICIAL_SAVED", { analysisId: id, month: item.month }, req);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === "GET" && url.pathname === "/api/monthly-closings") {
@@ -2928,6 +3268,7 @@ async function handleApi(req, res) {
         if (item.userCorrected) learnCategoryRule(user.id, item.description.trim(), item.category.trim());
         imported += 1;
       }
+      if (imported > 0) db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(user.id);
       audit(user.id, "TRANSACTIONS_IMPORTED", { imported, skippedDuplicates: items.length - deduped.length, source: body.source || "importado" }, req);
       return send(res, 201, { imported, skippedDuplicates: items.length - deduped.length });
     }
@@ -3018,7 +3359,7 @@ async function handleApi(req, res) {
       const user = requireUser(req, res);
       if (!user) return;
       audit(user.id, "DATA_EXPORTED", null, req);
-      const transactions = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, external_id, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
+      const transactions = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, external_id, note, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
       const consents = db.prepare(`
         SELECT ct.version, ct.collected_data, ct.purpose, ct.storage, ct.retention, uc.accepted_at, uc.revoked_at
         FROM user_consents uc JOIN consent_terms ct ON ct.id = uc.term_id
@@ -3027,10 +3368,12 @@ async function handleApi(req, res) {
       const goals = getUserGoals(user.id);
       const goal = goals[0] || null;
       const goalContributions = getGoalContributions(user.id, 1000);
+      const goalHistory = getGoalChangeHistory(user.id, 1000);
       const categoryRules = loadCategoryRules(user.id);
+      const aiHistory = db.prepare("SELECT month, source, model, summary, is_official, created_at FROM ai_analysis_history WHERE user_id = ? ORDER BY id DESC").all(user.id);
       const monthlyClosings = db.prepare("SELECT month, snapshot_json, closed_at FROM monthly_closings WHERE user_id = ? ORDER BY month DESC").all(user.id)
         .map((row) => ({ ...row, snapshot: JSON.parse(row.snapshot_json || "{}"), snapshot_json: undefined }));
-      return send(res, 200, { user, consents, goal, goals, goalContributions, monthlyClosings, categoryRules, transactions }, {
+      return send(res, 200, { user, consents, goal, goals, goalContributions, goalHistory, monthlyClosings, categoryRules, aiHistory, transactions }, {
         "Content-Disposition": "attachment; filename=\"meus-dados-financeiros.json\"",
       });
     }

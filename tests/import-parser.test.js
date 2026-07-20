@@ -22,4 +22,21 @@ assert.equal(expenses.length, 3, "deve reconhecer compras/gastos positivos na pl
 assert.ok(candidates.find((item) => item.description === "Supermercado Extra").value < 0);
 assert.ok(candidates.find((item) => item.description === "Spotify Premium").category === "Assinaturas");
 
+const nubank = __test.importTransactionsFromCSV(fs.readFileSync(path.join(__dirname, "fixtures", "extrato-nubank.csv")));
+const nubankMapping = __test.suggestImportMapping(nubank.columns, nubank.rows);
+const nubankCandidates = nubank.rows.map((row) => __test.rowToImportCandidate(row, nubankMapping, []));
+assert.equal(nubankMapping.type, "Tipo");
+assert.equal(nubankCandidates.filter((item) => item.value > 0).length, 2, "credito Nubank deve virar entrada");
+assert.equal(nubankCandidates.filter((item) => item.value < 0).length, 2, "debito Nubank deve virar saida mesmo com valor positivo");
+assert.ok(nubankCandidates.find((item) => item.description === "Uber Viagem").category === "Transporte");
+
+const inter = __test.importTransactionsFromCSV(fs.readFileSync(path.join(__dirname, "fixtures", "extrato-inter.csv")));
+const interMapping = __test.suggestImportMapping(inter.columns, inter.rows);
+const interCandidates = inter.rows.map((row) => __test.rowToImportCandidate(row, interMapping, []));
+assert.equal(interMapping.debitValue, "Debito");
+assert.equal(interMapping.creditValue, "Credito");
+assert.equal(interCandidates.filter((item) => item.value > 0).length, 2, "coluna Credito deve virar entrada");
+assert.equal(interCandidates.filter((item) => item.value < 0).length, 2, "coluna Debito deve virar saida");
+assert.ok(interCandidates.find((item) => item.description === "Supermercado Atacadao").category === "Mercado");
+
 console.log("Import parser fixture OK");

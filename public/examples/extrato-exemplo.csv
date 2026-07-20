@@ -1,0 +1,11 @@
+Data;Descrição;Valor;Categoria;Tipo;Forma de pagamento;Status
+2026-07-05;Salário Empresa Tech Ltda;4200,00;Receita;entrada;Transferência bancária;Concluida
+2026-07-06;Aluguel Residencial;-1350,00;Contas fixas;saida;Débito automático;Concluida
+2026-07-07;Internet Fibra 500MB;-119,90;Contas fixas;saida;Cartão de crédito;Concluida
+2026-07-08;Supermercado Pão de Açúcar;-342,80;Mercado;saida;Cartão de débito;Concluida
+2026-07-09;Uber Viagem;-36,70;Transporte;saida;Cartão de crédito;Concluida
+2026-07-10;iFood Restaurante;-78,50;Alimentação;saida;Cartão de crédito;Concluida
+2026-07-11;Spotify Premium;-21,90;Assinaturas;saida;Cartão de crédito;Concluida
+2026-07-12;Farmácia Drogasil;-64,25;Saúde;saida;Cartão de débito;Concluida
+2026-07-13;Curso Online Finanças;-79,90;Educação;saida;Cartão de crédito;Concluida
+2026-07-14;Transferência recebida - Reembolso;220,00;Receita;entrada;PIX recebido;Concluida

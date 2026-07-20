@@ -238,3 +238,57 @@ Se `OPENAI_MODEL` nao estiver configurado, o backend avisa no terminal.
 9. Gerar relatorio CSV ou PDF.
 10. Mostrar logs em Minha atividade.
 11. Demonstrar revogacao de consentimento.
+
+## 12. Atualizacoes desta versao
+
+### Importacao guiada
+
+- Tela passo a passo: arquivo, mapeamento, previa, correcao e confirmacao.
+- Links para arquivos de exemplo em `public/examples/extrato-exemplo.csv` e `public/examples/extrato-exemplo.xlsx`.
+- Testes com fixtures de planilha generica, Nubank e Inter.
+- A previa separa entradas, saidas, duplicadas, erros e categorias pendentes antes de salvar.
+- A importacao considera tipo, debito, credito, sinal do valor e descricao para evitar que gastos positivos virem entrada.
+
+### Lancamentos
+
+- Campo de observacao por lancamento.
+- Busca tambem considera a observacao.
+- Selecao multipla para excluir lancamentos ou aplicar categoria em massa.
+- Toda alteracao invalida o cache da IA para manter a analise atualizada.
+
+### Dashboard
+
+- KPIs clicaveis para abrir Lancamentos ou Metas.
+- Gasto medio por dia.
+- Previsao de fechamento do mes.
+- Card de maior risco do mes.
+- Card de melhor evolucao em comparacao com o mes anterior.
+
+### Metas
+
+- Varias metas ativas.
+- Meta principal selecionavel.
+- Aportes podem ser criados, editados e excluidos.
+- Cada aporte atualiza tambem o lancamento automatico de categoria `Metas`.
+- Historico de mudancas registra criacao, edicao, exclusao, meta principal e aportes.
+
+### IA e transparencia
+
+- Seletor entre analise local e OpenAI antes de analisar.
+- Botao para reanalisar lancamentos pendentes.
+- Indicador visual de uso diario da OpenAI.
+- Resumo dos dados enviados para a IA, sem arquivo bruto e sem dados desnecessarios.
+- Historico de analises geradas.
+- Uma analise pode ser marcada como oficial do mes.
+
+### Relatorios
+
+- PDF por impressao com capa, KPIs e graficos em HTML baseados nos dados reais.
+- Comparacao mensal visual lado a lado.
+- Fechamento mensal com guia de etapas.
+
+### LGPD e auditoria
+
+- Exportacao JSON inclui historico de metas e historico de analises.
+- Revogacao de consentimento limpa transacoes, metas, regras, historico de IA e fechamentos mensais.
+- Minha atividade mostra novas acoes como edicao em massa, aporte editado, meta principal e analise oficial.

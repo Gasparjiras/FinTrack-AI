@@ -113,9 +113,9 @@ http://localhost:3000
 4. Se houver pendencias, use a correcao em lote para classificar apenas o que precisa.
 5. Cadastre uma meta financeira.
 6. Abra o Dashboard para ver KPIs, recorrencias, score e graficos.
-7. Abra Analise com IA e clique em "Usar analise salva" ou "Gerar nova analise".
-8. Registre um aporte na meta e veja o historico mensal na aba Metas.
-9. Abra Relatorios, feche o mes e gere CSV, PDF ou modo apresentacao.
+7. Abra Analise com IA, escolha "Analise local" ou "OpenAI" e clique em "Analisar".
+8. Registre um aporte na meta, edite o aporte e veja o historico mensal na aba Metas.
+9. Abra Relatorios, feche o mes, veja a comparacao mensal e gere CSV, PDF ou modo apresentacao.
 10. Abra Configuracoes para ver "Minha atividade", regras aprendidas e status da IA.
 11. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
 
@@ -132,6 +132,24 @@ O arquivo pode ter colunas com estes significados:
 - Banco ou origem
 
 Se os nomes forem diferentes, o app permite mapear as colunas manualmente antes de gerar a previa.
+
+Arquivos prontos para teste ficam em:
+
+- `public/examples/extrato-exemplo.csv`
+- `public/examples/extrato-exemplo.xlsx`
+
+## Novidades Desta Versao
+
+- Fluxo de importacao em etapas com arquivo, mapeamento, previa, correcao e confirmacao.
+- Selecao multipla para excluir lancamentos ou aplicar categoria em massa.
+- Campo de observacao por lancamento.
+- Dashboard com gasto medio por dia, previsao de fechamento, maior risco e melhor evolucao.
+- Meta principal selecionavel e aportes editaveis.
+- Historico de mudancas nas metas.
+- Seletor entre analise local e OpenAI.
+- Historico de analises e opcao de marcar analise oficial do mes.
+- Resumo dos dados enviados para a OpenAI.
+- Relatorio PDF com capa e graficos baseados nos dados reais.
 
 ## Scripts
 

@@ -12,6 +12,9 @@ const transactionSearch = document.querySelector("#transactionSearch");
 const transactionTypeFilter = document.querySelector("#transactionTypeFilter");
 const transactionCategoryFilter = document.querySelector("#transactionCategoryFilter");
 const transactionMonthFilter = document.querySelector("#transactionMonthFilter");
+const bulkCategorySelect = document.querySelector("#bulkCategorySelect");
+const bulkApplyCategoryBtn = document.querySelector("#bulkApplyCategoryBtn");
+const bulkDeleteBtn = document.querySelector("#bulkDeleteBtn");
 const prevTransactionsPage = document.querySelector("#prevTransactionsPage");
 const nextTransactionsPage = document.querySelector("#nextTransactionsPage");
 const transactionsPageInfo = document.querySelector("#transactionsPageInfo");
@@ -22,6 +25,7 @@ const statementImportForm = document.querySelector("#statementImportForm");
 const importMappingCard = document.querySelector("#importMappingCard");
 const importMappingFields = document.querySelector("#importMappingFields");
 const buildImportPreviewBtn = document.querySelector("#buildImportPreviewBtn");
+const importStepper = document.querySelector("#importStepper");
 const importStats = document.querySelector("#importStats");
 const importPreviewCard = document.querySelector("#importPreviewCard");
 const importPreviewBody = document.querySelector("#importPreviewBody");
@@ -40,6 +44,10 @@ const reportRecurringList = document.querySelector("#reportRecurringList");
 const goalTimelineList = document.querySelector("#goalTimelineList");
 const openAiStatusPanel = document.querySelector("#openAiStatusPanel");
 const settingsAiStatusPanel = document.querySelector("#settingsAiStatusPanel");
+const openAiPayloadSummary = document.querySelector("#openAiPayloadSummary");
+const aiHistoryList = document.querySelector("#aiHistoryList");
+const aiModeSelect = document.querySelector("#aiModeSelect");
+const reanalyzePendingBtn = document.querySelector("#reanalyzePendingBtn");
 const refreshAiBtn = document.querySelector("#refreshAiBtn");
 const categoryRuleForm = document.querySelector("#categoryRuleForm");
 const categoryRulesList = document.querySelector("#categoryRulesList");
@@ -52,6 +60,10 @@ const goalLivePreview = document.querySelector("#goalLivePreview");
 const goalsList = document.querySelector("#goalsList");
 const goalContributionSelect = document.querySelector("#goalContributionSelect");
 const goalContributionsList = document.querySelector("#goalContributionsList");
+const goalChangeHistoryList = document.querySelector("#goalChangeHistoryList");
+const cancelContributionEditBtn = document.querySelector("#cancelContributionEditBtn");
+const monthlyClosingGuide = document.querySelector("#monthlyClosingGuide");
+const monthlyComparisonVisual = document.querySelector("#monthlyComparisonVisual");
 const acceptConsentBtn = document.querySelector("#acceptConsentBtn");
 const revokeConsentBtn = document.querySelector("#revokeConsentBtn");
 const passwordInput = document.querySelector("#passwordInput");
@@ -77,6 +89,7 @@ let goals = [];
 let goalContributions = [];
 let goalContributionSummary = [];
 let goalTimelines = {};
+let goalChangeHistory = [];
 let analysis = null;
 let importCandidates = [];
 let importRows = [];
@@ -88,11 +101,13 @@ let importPreviewErrors = [];
 let monthlyClosings = [];
 let aiStatusSnapshot = null;
 let categoryRules = [];
+let aiHistory = [];
 let userConsentAccepted = true;
 let categoryManuallyChanged = false;
 let suggestionTimer = null;
 let transactionPage = 1;
 let editingGoalId = null;
+let editingContributionId = null;
 let selectedAnalysisMonth = currentMonthValue();
 const transactionPageSize = 8;
 const charts = {};
@@ -279,6 +294,7 @@ function showView(view) {
   document.querySelector("#pageTitle").textContent = viewTitles[view] || "EduFin";
   requestAnimationFrame(() => renderVisibleCharts(view));
   if (view === "configuracoes") loadAudit();
+  if (view === "ia") loadAIHistory();
   refreshIcons();
 }
 
@@ -354,6 +370,7 @@ function resetTransactionForm() {
   if (transactionForm.elements.type) transactionForm.elements.type.value = "saida";
   if (transactionForm.elements.paymentMethod) transactionForm.elements.paymentMethod.value = "Manual";
   if (transactionForm.elements.status) transactionForm.elements.status.value = "Concluida";
+  if (transactionForm.elements.note) transactionForm.elements.note.value = "";
   categoryManuallyChanged = false;
   setHidden(categorySuggestion, true);
   document.querySelector("#formTitle").textContent = "Lançamento manual";
@@ -378,7 +395,7 @@ function filteredTransactions() {
   const category = transactionCategoryFilter?.value || "";
   const month = transactionMonthFilter?.value || "";
   return transactions.filter((item) => {
-    const haystack = normalizeText(`${item.description} ${item.category} ${item.payment_method || ""} ${item.transaction_status || ""}`);
+    const haystack = normalizeText(`${item.description} ${item.category} ${item.payment_method || ""} ${item.transaction_status || ""} ${item.note || ""}`);
     const itemType = item.type || (item.value >= 0 ? "entrada" : "saida");
     return (!search || haystack.includes(search))
       && (!type || itemType === type)
@@ -394,8 +411,9 @@ function renderTransactionsTable() {
   const pageItems = items.slice((transactionPage - 1) * transactionPageSize, transactionPage * transactionPageSize);
   const rows = pageItems.map((item) => `
     <tr>
+      <td><input class="transaction-check" type="checkbox" value="${item.id}" aria-label="Selecionar lançamento"></td>
       <td>${formatDate(item.date)}</td>
-      <td><strong>${escapeHtml(item.description)}</strong></td>
+      <td><strong>${escapeHtml(item.description)}</strong>${item.note ? `<small class="transaction-note">${escapeHtml(item.note)}</small>` : ""}</td>
       <td><span class="category-badge">${escapeHtml(item.category)}</span></td>
       <td><span class="type-badge ${escapeHtml(item.type || (item.value >= 0 ? "entrada" : "saida"))}">${escapeHtml(typeLabel(item.type || (item.value >= 0 ? "entrada" : "saida")))}</span></td>
       <td>${escapeHtml(item.payment_method || "Manual")}</td>
@@ -413,7 +431,7 @@ function renderTransactionsTable() {
   const emptyMessage = transactions.length === 0
     ? "Nenhuma transação importada ainda. Importe um extrato ou cadastre uma transação para começar."
     : "Nenhuma transação encontrada para os filtros selecionados.";
-  transactionsBody.innerHTML = rows || `<tr><td colspan="9"><div class="empty-compact">${emptyMessage}</div></td></tr>`;
+  transactionsBody.innerHTML = rows || `<tr><td colspan="10"><div class="empty-compact">${emptyMessage}</div></td></tr>`;
   if (transactionsPageInfo) transactionsPageInfo.textContent = `Página ${transactionPage} de ${totalPages} - ${items.length} registro(s)`;
   if (prevTransactionsPage) prevTransactionsPage.disabled = transactionPage <= 1;
   if (nextTransactionsPage) nextTransactionsPage.disabled = transactionPage >= totalPages;
@@ -426,6 +444,12 @@ function renderTransactionFilters() {
   const names = [...new Set(transactions.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   transactionCategoryFilter.innerHTML = `<option value="">Todas</option>${names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
   if (names.includes(current)) transactionCategoryFilter.value = current;
+  if (bulkCategorySelect) {
+    const bulkCurrent = bulkCategorySelect.value;
+    const available = categories.map((item) => item.name).filter((name) => !["Receita", "Metas", "Categoria pendente"].includes(name));
+    bulkCategorySelect.innerHTML = `<option value="">Alterar categoria</option>${available.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+    if (available.includes(bulkCurrent)) bulkCategorySelect.value = bulkCurrent;
+  }
 }
 
 function renderTransactionAiHelper() {
@@ -496,6 +520,45 @@ nextTransactionsPage?.addEventListener("click", () => {
   renderTransactionsTable();
 });
 
+function selectedTransactionIds() {
+  return [...transactionsBody.querySelectorAll(".transaction-check:checked")]
+    .map((input) => Number(input.value))
+    .filter(Boolean);
+}
+
+bulkApplyCategoryBtn?.addEventListener("click", async () => {
+  const ids = selectedTransactionIds();
+  const category = bulkCategorySelect?.value;
+  if (!ids.length) return toast("Selecione ao menos um lançamento.");
+  if (!category) return toast("Escolha a categoria que será aplicada.");
+  try {
+    const result = await api("/api/transactions/bulk", {
+      method: "POST",
+      body: JSON.stringify({ action: "category", ids, category }),
+    });
+    toast(`${result.updated || 0} lançamento(s) atualizados.`);
+    await refreshFinancialData();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
+bulkDeleteBtn?.addEventListener("click", async () => {
+  const ids = selectedTransactionIds();
+  if (!ids.length) return toast("Selecione ao menos um lançamento.");
+  if (!confirm(`Excluir ${ids.length} lançamento(s) selecionado(s)?`)) return;
+  try {
+    const result = await api("/api/transactions/bulk", {
+      method: "POST",
+      body: JSON.stringify({ action: "delete", ids }),
+    });
+    toast(`${result.deleted || 0} lançamento(s) excluído(s).`);
+    await refreshFinancialData();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 transactionsBody.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -506,6 +569,7 @@ transactionsBody.addEventListener("click", async (event) => {
     transactionForm.elements.value.value = Math.abs(Number(item.value || 0));
     transactionForm.elements.date.value = item.date;
     transactionForm.elements.category.value = item.category;
+    if (transactionForm.elements.note) transactionForm.elements.note.value = item.note || "";
     if (transactionForm.elements.type) transactionForm.elements.type.value = item.type || (item.value >= 0 ? "entrada" : "saida");
     if (transactionForm.elements.paymentMethod) transactionForm.elements.paymentMethod.value = item.payment_method || "Manual";
     if (transactionForm.elements.status) transactionForm.elements.status.value = item.transaction_status || "Concluida";
@@ -560,6 +624,7 @@ function updateTransactionStats() {
 async function loadCategories() {
   categories = await api("/api/categories");
   renderCategoryOptions();
+  renderTransactionFilters();
   renderCategoryCards();
   renderDashboardBudgets();
   updateBudgetStatus();
@@ -822,6 +887,7 @@ goalForm.addEventListener("input", updateGoalLivePreview);
 goalsList?.addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-goal-edit]");
   const deleteButton = event.target.closest("[data-goal-delete]");
+  const primaryButton = event.target.closest("[data-goal-primary]");
   const newButton = event.target.closest("[data-goal-new]");
   if (newButton) {
     resetGoalForm();
@@ -835,6 +901,9 @@ goalsList?.addEventListener("click", (event) => {
       goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
+  if (primaryButton) {
+    setPrimaryGoal(primaryButton.dataset.goalPrimary);
+  }
   if (deleteButton) {
     const goal = goals.find((item) => String(item.id) === String(deleteButton.dataset.goalDelete));
     if (!goal) return;
@@ -844,11 +913,28 @@ goalsList?.addEventListener("click", (event) => {
   }
 });
 
+async function setPrimaryGoal(goalId) {
+  try {
+    await api(`/api/goal/${goalId}/primary`, { method: "POST" });
+    toast("Meta principal atualizada.");
+    await refreshFinancialData();
+    await loadGoal(goalId);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 goalContributionsList?.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-contribution-edit]");
   const deleteButton = event.target.closest("[data-contribution-delete]");
-  if (!deleteButton) return;
-  const item = goalContributions.find((entry) => String(entry.id) === String(deleteButton.dataset.contributionDelete));
+  const id = editButton?.dataset.contributionEdit || deleteButton?.dataset.contributionDelete;
+  const item = goalContributions.find((entry) => String(entry.id) === String(id));
   if (!item) return;
+  if (editButton) {
+    fillContributionForm(item);
+    goalContributionForm.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
   const ok = confirm(`Excluir o aporte de ${currency.format(item.amount || 0)} em "${item.goal_name}"? O lançamento criado por esse aporte também será removido.`);
   if (!ok) return;
   deleteGoalContribution(item.id);
@@ -880,21 +966,48 @@ async function deleteGoalContribution(contributionId) {
   }
 }
 
+function fillContributionForm(item) {
+  editingContributionId = item.id;
+  if (goalContributionForm.elements.contributionId) goalContributionForm.elements.contributionId.value = item.id;
+  if (goalContributionSelect) goalContributionSelect.value = item.goal_id;
+  goalContributionForm.elements.amount.value = Number(item.amount || 0);
+  goalContributionForm.elements.date.value = item.contribution_date || new Date().toISOString().slice(0, 10);
+  goalContributionForm.elements.note.value = item.note || "";
+  const title = goalContributionForm.querySelector(".panel-head h3");
+  const submitText = goalContributionForm.querySelector("button[type='submit'] span");
+  if (title) title.textContent = "Editar aporte";
+  if (submitText) submitText.textContent = "Salvar aporte";
+  setHidden(cancelContributionEditBtn, false);
+}
+
+function resetContributionForm() {
+  editingContributionId = null;
+  goalContributionForm?.reset();
+  if (goalContributionForm?.elements.contributionId) goalContributionForm.elements.contributionId.value = "";
+  if (goalContributionForm?.elements.date) goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  if (goalContributionSelect && goals[0]) goalContributionSelect.value = goals[0].id;
+  const title = goalContributionForm?.querySelector(".panel-head h3");
+  const submitText = goalContributionForm?.querySelector("button[type='submit'] span");
+  if (title) title.textContent = "Guardar este mês";
+  if (submitText) submitText.textContent = "Adicionar na meta";
+  setHidden(cancelContributionEditBtn, true);
+}
+
 goalContributionForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const data = formData(goalContributionForm);
     if (goalContributionSelect) data.goalId = goalContributionSelect.value;
-    await api("/api/goal/contribution", {
-      method: "POST",
+    const contributionId = editingContributionId || data.contributionId;
+    delete data.contributionId;
+    await api(contributionId ? `/api/goal/contributions/${contributionId}` : "/api/goal/contribution", {
+      method: contributionId ? "PUT" : "POST",
       body: JSON.stringify(data),
     });
-    goalContributionForm.reset();
-    goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
-    toast("Valor guardado adicionado à meta e aos lançamentos.");
+    toast(contributionId ? "Aporte atualizado." : "Valor guardado adicionado à meta e aos lançamentos.");
+    resetContributionForm();
     await refreshFinancialData();
-    await loadGoal();
-    if (goalContributionSelect && goals[0]) goalContributionSelect.value = goals[0].id;
+    await loadGoal(goalContributionSelect?.value || editingGoalId);
     showView("metas");
   } catch (error) {
     toast(error.message);
@@ -902,6 +1015,7 @@ goalContributionForm?.addEventListener("submit", async (event) => {
 });
 
 goalContributionSelect?.addEventListener("change", renderGoalTimeline);
+cancelContributionEditBtn?.addEventListener("click", resetContributionForm);
 
 async function loadGoal(selectedGoalId) {
   const result = await api("/api/goal");
@@ -909,9 +1023,11 @@ async function loadGoal(selectedGoalId) {
   goalContributions = result.contributions || [];
   goalContributionSummary = result.contributionSummary || [];
   goalTimelines = result.goalTimelines || {};
+  goalChangeHistory = result.history || [];
   renderGoalsList();
   renderGoalContributionOptions();
   renderGoalContributions();
+  renderGoalChangeHistory();
   renderGoalTimeline();
   if (goalContributionForm?.elements.date && !goalContributionForm.elements.date.value) {
     goalContributionForm.elements.date.value = new Date().toISOString().slice(0, 10);
@@ -967,13 +1083,53 @@ function renderGoalContributions() {
             <span class="goal-item-icon"><i data-lucide="piggy-bank"></i></span>
             <div><strong>${escapeHtml(item.goal_name || "Meta")}</strong><small>${formatDate(item.contribution_date)}${item.note ? ` - ${escapeHtml(item.note)}` : ""}</small></div>
             <b>${currency.format(item.amount || 0)}</b>
-            <button type="button" class="icon-button danger-icon-button" data-contribution-delete="${item.id}" title="Excluir aporte"><i data-lucide="trash-2"></i></button>
+            <div class="row-actions"><button type="button" class="icon-button secondary" data-contribution-edit="${item.id}" title="Editar aporte"><i data-lucide="pencil"></i></button><button type="button" class="icon-button danger-icon-button" data-contribution-delete="${item.id}" title="Excluir aporte"><i data-lucide="trash-2"></i></button></div>
           </article>
         `).join("")}
       </section>
     `;
   }).join("");
   refreshIcons();
+}
+
+function renderGoalChangeHistory() {
+  if (!goalChangeHistoryList) return;
+  if (!goalChangeHistory.length) {
+    goalChangeHistoryList.innerHTML = `<div class="empty-compact">As mudanças em metas aparecerão aqui.</div>`;
+    return;
+  }
+  goalChangeHistoryList.innerHTML = goalChangeHistory.slice(0, 8).map((item) => {
+    const label = goalHistoryLabel(item);
+    const amount = Number(item.next?.amount ?? item.previous?.amount ?? 0);
+    return `
+      <article class="goal-change-row">
+        <span class="goal-item-icon"><i data-lucide="${goalHistoryIcon(item.action)}"></i></span>
+        <div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(item.goal_name || item.next?.goal_name || item.previous?.goal_name || "Meta")} - ${escapeHtml(formatDateTime(item.created_at))}</small></div>
+        ${amount > 0 ? `<b>${currency.format(amount)}</b>` : ""}
+      </article>
+    `;
+  }).join("");
+  refreshIcons();
+}
+
+function goalHistoryLabel(item) {
+  const labels = {
+    GOAL_CREATED: "Meta criada",
+    GOAL_UPDATED: "Meta editada",
+    GOAL_DELETED: "Meta excluída",
+    GOAL_SET_PRIMARY: "Definida como meta principal",
+    GOAL_CONTRIBUTION_CREATED: "Aporte registrado",
+    GOAL_CONTRIBUTION_UPDATED: "Aporte editado",
+    GOAL_CONTRIBUTION_DELETED: "Aporte excluído",
+  };
+  return labels[item.action] || "Mudança registrada";
+}
+
+function goalHistoryIcon(action) {
+  if (String(action).includes("CONTRIBUTION")) return "piggy-bank";
+  if (String(action).includes("PRIMARY")) return "star";
+  if (String(action).includes("DELETED")) return "trash-2";
+  return "target";
 }
 
 function fillGoalForm(goal) {
@@ -1010,8 +1166,9 @@ function renderGoalsList() {
     ${goals.map((goal) => `
       <article class="goal-item-card">
         <div class="goal-item-head">
-          <span class="goal-item-icon"><i data-lucide="${goalIcon(goal.objective)}"></i></span><div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong></div>
+          <span class="goal-item-icon"><i data-lucide="${goalIcon(goal.objective)}"></i></span><div><span>${escapeHtml(objectiveLabel(goal.objective))}</span><strong>${escapeHtml(goal.goal_name)}</strong>${goal.is_primary ? `<small class="goal-main-badge"><i data-lucide="star"></i> Meta principal</small>` : ""}</div>
           <span class="goal-item-percent">${goal.progressPercentage || 0}%</span>
+          ${goal.is_primary ? "" : `<button type="button" class="icon-button secondary" data-goal-primary="${goal.id}" title="Tornar principal"><i data-lucide="star"></i></button>`}
           <button type="button" class="icon-button secondary" data-goal-edit="${goal.id}" title="Editar meta"><i data-lucide="pencil"></i></button>
           <button type="button" class="icon-button danger-icon-button" data-goal-delete="${goal.id}" title="Excluir meta"><i data-lucide="trash-2"></i></button>
         </div>
@@ -1076,7 +1233,9 @@ document.querySelector("#analyzeBtn").addEventListener("click", async (event) =>
   button.disabled = true;
   button.innerHTML = `<span class="button-spinner"></span><span>Analisando...</span>`;
   try {
-    await loadAnalysis(true);
+    await loadAnalysis(aiModeSelect?.value === "openai", { record: true });
+    await loadAIHistory();
+    await loadAIStatus();
     toast("Análise concluída.");
   } catch (error) {
     toast(error.message);
@@ -1093,7 +1252,9 @@ refreshAiBtn?.addEventListener("click", async (event) => {
   button.disabled = true;
   button.innerHTML = `<span class="button-spinner"></span><span>Gerando...</span>`;
   try {
-    await loadAnalysis(true, { refreshAI: true });
+    await loadAnalysis(aiModeSelect?.value === "openai", { refreshAI: aiModeSelect?.value === "openai", record: true });
+    await loadAIHistory();
+    await loadAIStatus();
     toast("Nova análise gerada.");
   } catch (error) {
     toast(error.message);
@@ -1104,10 +1265,21 @@ refreshAiBtn?.addEventListener("click", async (event) => {
   }
 });
 
+reanalyzePendingBtn?.addEventListener("click", async () => {
+  const pending = transactions.filter((item) => item.category === "Categoria pendente");
+  if (!pending.length) return toast("Não há lançamentos pendentes para reanalisar.");
+  await loadAnalysis(aiModeSelect?.value === "openai", { record: true });
+  await loadAIHistory();
+  await loadAIStatus();
+  showView("ia");
+  toast(`${pending.length} lançamento(s) pendente(s) revisado(s) na análise.`);
+});
+
 async function loadAnalysis(useAI, options = {}) {
   const params = new URLSearchParams({ month: selectedAnalysisMonth });
   if (useAI) params.set("useAI", "1");
   if (options.refreshAI) params.set("refreshAI", "1");
+  if (options.record) params.set("record", "1");
   analysis = await api(`/api/ai/analysis?${params.toString()}`);
   if (analysis.selectedMonth) {
     selectedAnalysisMonth = analysis.selectedMonth;
@@ -1122,12 +1294,19 @@ async function loadAnalysis(useAI, options = {}) {
   renderGoalTimeline();
   renderAIReport();
   renderOpenAIStatusPanels();
+  renderOpenAIPayloadSummary();
+  renderMonthlyClosingGuide();
+  renderMonthlyComparisonVisual();
   renderVisibleCharts(document.querySelector(".app-view.active")?.dataset.page || "dashboard");
 }
 
 async function loadAIStatus() {
   const status = await api("/api/ai/status");
   aiStatusSnapshot = status;
+  if (aiModeSelect) {
+    aiModeSelect.querySelector('option[value="openai"]').disabled = !status.configured;
+    if (!status.configured) aiModeSelect.value = "local";
+  }
   aiProvider.textContent = status.configured
     ? `OpenAI conectada - ${status.remainingToday}/${status.dailyLimit} análises`
     : status.hasApiKey && !status.hasModel
@@ -1157,7 +1336,50 @@ function updateSummaryKpis() {
   document.querySelector("#aiTopCategory").textContent = analysis.categories[0]?.category || "Sem dados";
   document.querySelector(".balance-card")?.classList.toggle("is-critical", Number(analysis.balance || 0) < 0);
   renderDashboardGoalCard();
+  renderDashboardDecisionCards();
   renderAssistantHub();
+}
+
+function renderDashboardDecisionCards() {
+  const avg = document.querySelector("#avgDailyExpense");
+  const forecast = document.querySelector("#closingForecast");
+  const risk = document.querySelector("#dashboardRiskCard");
+  const best = document.querySelector("#dashboardBestCard");
+  if (!analysis) return;
+  const [year, month] = String(analysis.selectedMonth || selectedAnalysisMonth).split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate() || 30;
+  const currentDate = new Date();
+  const isCurrentMonth = currentMonthValue(currentDate) === (analysis.selectedMonth || selectedAnalysisMonth);
+  const elapsedDays = isCurrentMonth ? Math.max(1, currentDate.getDate()) : daysInMonth;
+  const dailyExpense = Number(analysis.totalExpenses || 0) / elapsedDays;
+  const projectedExpenses = dailyExpense * daysInMonth;
+  if (avg) avg.textContent = currency.format(dailyExpense || 0);
+  if (forecast) forecast.textContent = currency.format(Number(analysis.totalIncome || 0) - projectedExpenses);
+  if (risk) {
+    const topAlert = analysis.budgetAlerts?.[0];
+    if (Number(analysis.balance || 0) < 0) {
+      risk.innerHTML = `<strong class="value-negative">Saldo negativo</strong><span>Você está ${currency.format(Math.abs(analysis.balance))} acima das entradas no período.</span>`;
+    } else if (topAlert) {
+      risk.innerHTML = `<strong>${escapeHtml(topAlert.category)}</strong><span>${currency.format(topAlert.exceededBy || 0)} acima do valor sugerido.</span>`;
+    } else {
+      risk.innerHTML = `<strong>Sem alerta crítico</strong><span>Os dados atuais não mostram estouro relevante.</span>`;
+    }
+  }
+  if (best) {
+    const comparison = analysis.monthlyComparison;
+    if (!comparison?.hasPrevious) {
+      best.innerHTML = `<div class="empty-compact">Aparece após dois meses com dados.</div>`;
+    } else {
+      const deltas = comparison.deltas || {};
+      const options = [
+        { label: "Gastos", value: Math.abs(deltas.expenses || 0), good: (deltas.expenses || 0) <= 0, text: `Gastos ${deltas.expenses <= 0 ? "caíram" : "subiram"} ${currency.format(Math.abs(deltas.expenses || 0))}` },
+        { label: "Saldo", value: Math.abs(deltas.balance || 0), good: (deltas.balance || 0) >= 0, text: `Saldo ${deltas.balance >= 0 ? "melhorou" : "piorou"} ${currency.format(Math.abs(deltas.balance || 0))}` },
+        { label: "Entradas", value: Math.abs(deltas.income || 0), good: (deltas.income || 0) >= 0, text: `Entradas ${deltas.income >= 0 ? "subiram" : "caíram"} ${currency.format(Math.abs(deltas.income || 0))}` },
+      ].filter((item) => item.good).sort((a, b) => b.value - a.value);
+      const selected = options[0] || { label: "Comparação", text: comparison.summary || "Sem melhora relevante no período." };
+      best.innerHTML = `<strong>${escapeHtml(selected.label)}</strong><span>${escapeHtml(selected.text)}</span>`;
+    }
+  }
 }
 
 function renderAssistantHub() {
@@ -1231,6 +1453,9 @@ function renderHealthScore() {
     <div class="score-components">
       ${(score.components || []).slice(0, 4).map((item) => `<span class="${item.good ? "good" : "warn"}">${escapeHtml(item.label)} <strong>${item.value}${escapeHtml(item.unit || "")}</strong></span>`).join("")}
     </div>
+    <div class="score-reasons">
+      ${(score.components || []).slice(0, 4).map((item) => `<small class="${item.good ? "good" : "warn"}">${item.good ? "Subiu" : "Caiu"}: ${escapeHtml(item.label)} ficou em ${item.value}${escapeHtml(item.unit || "")}.</small>`).join("")}
+    </div>
   `;
   targets.forEach((container) => {
     container.className = "score-card-body";
@@ -1258,10 +1483,13 @@ function renderRecurringTransactions() {
 function renderOpenAIStatusPanels() {
   const status = aiStatusSnapshot || {};
   const last = analysis?.aiStatus || {};
+  const used = Number(status.usedToday || 0);
+  const limit = Number(status.dailyLimit || 0);
+  const usagePercent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const html = `
     <div><span>Modo atual</span><strong>${status.configured ? "OpenAI ativa" : "Análise local"}</strong></div>
     <div><span>Modelo</span><strong>${escapeHtml(status.model || "Não configurado")}</strong></div>
-    <div><span>Requisições hoje</span><strong>${Number(status.usedToday || 0)}/${Number(status.dailyLimit || 0)}</strong></div>
+    <div><span>Uso diário</span><strong>${used}/${limit}</strong><em class="usage-bar"><i style="width:${usagePercent}%"></i></em></div>
     <div><span>Restantes</span><strong>${Number(status.remainingToday || 0)}</strong></div>
     <div><span>Última análise</span><strong>${last.source === "openai" ? (last.cached ? "OpenAI/cache" : "OpenAI") : "Local"}</strong></div>
   `;
@@ -1269,6 +1497,68 @@ function renderOpenAIStatusPanels() {
     container.innerHTML = html;
   });
 }
+
+function renderOpenAIPayloadSummary() {
+  if (!openAiPayloadSummary) return;
+  const payload = analysis?.openAIRequestSummary;
+  if (!payload) {
+    openAiPayloadSummary.innerHTML = `<div class="empty-compact">Gere uma análise para ver o resumo enviado à IA.</div>`;
+    return;
+  }
+  const topCategories = payload.principaisCategorias || [];
+  openAiPayloadSummary.innerHTML = `
+    <div class="payload-grid">
+      <div><span>Período</span><strong>${escapeHtml(monthLabel(payload.periodo || selectedAnalysisMonth))}</strong></div>
+      <div><span>Entradas</span><strong>${currency.format(payload.totais?.entradas || 0)}</strong></div>
+      <div><span>Saídas</span><strong>${currency.format(payload.totais?.saidas || 0)}</strong></div>
+      <div><span>Pendentes</span><strong>${Number(payload.totais?.pendentes || 0)}</strong></div>
+    </div>
+    <div class="payload-list">
+      <strong>Principais categorias usadas no contexto</strong>
+      ${topCategories.length ? topCategories.map((item) => `<span>${escapeHtml(item.categoria)} - ${currency.format(item.valor || 0)} (${item.percentual || 0}%)</span>`).join("") : `<span>Sem categorias no período.</span>`}
+    </div>
+    <p>Não enviamos sua senha, CPF, endereço ou arquivo bruto. O contexto contém apenas totais, categorias, meta e indicadores necessários para a análise financeira.</p>
+  `;
+}
+
+async function loadAIHistory() {
+  if (!aiHistoryList) return;
+  try {
+    aiHistory = await api("/api/ai/history");
+  } catch {
+    aiHistory = [];
+  }
+  renderAIHistory();
+}
+
+function renderAIHistory() {
+  if (!aiHistoryList) return;
+  if (!aiHistory.length) {
+    aiHistoryList.innerHTML = `<div class="empty-compact">Nenhuma análise salva ainda. Gere uma análise para criar o histórico.</div>`;
+    return;
+  }
+  aiHistoryList.innerHTML = aiHistory.slice(0, 8).map((item) => `
+    <article class="ai-history-row ${item.is_official ? "official" : ""}">
+      <span class="panel-icon ai-icon"><i data-lucide="${item.source === "openai" ? "bot" : "cpu"}"></i></span>
+      <div><strong>${escapeHtml(monthLabel(item.month))} ${item.is_official ? "- oficial" : ""}</strong><small>${escapeHtml(item.source === "openai" ? `OpenAI ${item.model || ""}` : "Análise local")} - ${escapeHtml(formatDateTime(item.created_at))}</small><p>${escapeHtml(item.summary || "")}</p></div>
+      <button type="button" class="secondary" data-ai-official="${item.id}"><i data-lucide="badge-check"></i><span>Oficial</span></button>
+    </article>
+  `).join("");
+  refreshIcons();
+}
+
+aiHistoryList?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-ai-official]");
+  if (!button) return;
+  try {
+    await api(`/api/ai/history/${button.dataset.aiOfficial}/official`, { method: "POST" });
+    toast("Análise oficial do mês salva.");
+    await loadAIHistory();
+    await loadAudit();
+  } catch (error) {
+    toast(error.message);
+  }
+});
 
 function renderAIReport() {
   if (!analysis || (analysis.totalIncome === 0 && analysis.totalExpenses === 0)) {
@@ -2025,6 +2315,8 @@ async function loadMonthlyClosings() {
 
 function renderMonthlyClosings() {
   if (!monthlyClosingList) return;
+  renderMonthlyClosingGuide();
+  renderMonthlyComparisonVisual();
   if (!monthlyClosings.length) {
     monthlyClosingList.innerHTML = `<div class="empty-compact">Nenhum mês fechado ainda. Feche o mês atual para salvar um retrato e comparar depois.</div>`;
     return;
@@ -2041,6 +2333,45 @@ function renderMonthlyClosings() {
       </article>
     `;
   }).join("");
+}
+
+function renderMonthlyClosingGuide() {
+  if (!monthlyClosingGuide) return;
+  const hasData = analysis && (analysis.totalIncome > 0 || analysis.totalExpenses > 0);
+  const alreadyClosed = monthlyClosings.some((item) => item.month === selectedAnalysisMonth);
+  monthlyClosingGuide.innerHTML = `
+    <div class="${hasData ? "done" : ""}"><b>1</b><span>Conferir lançamentos de ${escapeHtml(monthLabel(selectedAnalysisMonth))}</span></div>
+    <div class="${hasData ? "done" : ""}"><b>2</b><span>Gerar análise e score do mês</span></div>
+    <div class="${alreadyClosed ? "done" : ""}"><b>3</b><span>${alreadyClosed ? "Mês fechado" : "Salvar fechamento"}</span></div>
+    <div><b>4</b><span>Comparar com o próximo mês</span></div>
+  `;
+}
+
+function renderMonthlyComparisonVisual() {
+  if (!monthlyComparisonVisual) return;
+  const comparison = analysis?.monthlyComparison;
+  if (!comparison || !comparison.hasPrevious) {
+    monthlyComparisonVisual.innerHTML = `<div class="empty-compact">Quando houver dois meses com lançamentos, a comparação aparecerá aqui.</div>`;
+    return;
+  }
+  const rows = [
+    { label: "Entradas", current: comparison.current.income, previous: comparison.previous.income, delta: comparison.deltas.income, good: comparison.deltas.income >= 0 },
+    { label: "Gastos", current: comparison.current.expenses, previous: comparison.previous.expenses, delta: comparison.deltas.expenses, good: comparison.deltas.expenses <= 0 },
+    { label: "Saldo", current: comparison.current.balance, previous: comparison.previous.balance, delta: comparison.deltas.balance, good: comparison.deltas.balance >= 0 },
+  ];
+  monthlyComparisonVisual.innerHTML = `
+    <div class="month-compare-head"><span>${escapeHtml(monthLabel(comparison.previousMonth))}</span><i data-lucide="arrow-right"></i><span>${escapeHtml(monthLabel(comparison.selectedMonth))}</span></div>
+    ${rows.map((row) => `
+      <article class="${row.good ? "good" : "bad"}">
+        <span>${escapeHtml(row.label)}</span>
+        <div><small>Antes</small><strong>${currency.format(row.previous || 0)}</strong></div>
+        <div><small>Agora</small><strong>${currency.format(row.current || 0)}</strong></div>
+        <b>${row.delta > 0 ? "+" : ""}${currency.format(row.delta || 0)}</b>
+      </article>
+    `).join("")}
+    <p>${escapeHtml(comparison.summary || "")}</p>
+  `;
+  refreshIcons();
 }
 
 closeMonthBtn?.addEventListener("click", async () => {
@@ -2110,6 +2441,9 @@ function printReportPdf() {
   const score = analysis.financialScore || {};
   const recurring = analysis.recurring || [];
   const weeklyPlan = (analysis.ai?.weeklyPlan?.length ? analysis.ai.weeklyPlan : analysis.aiBlocks?.weeklyPlan || []).slice(0, 7);
+  const maxCategory = Math.max(...topCategories.map((item) => Number(item.total || 0)), 1);
+  const monthRows = (analysis.monthlyEvolution || []).filter((item) => Number(item.income || 0) > 0 || Number(item.expenses || 0) > 0).slice(-6);
+  const maxMonthValue = Math.max(...monthRows.flatMap((item) => [Number(item.income || 0), Number(item.expenses || 0)]), 1);
   const html = `
     <!doctype html>
     <html lang="pt-BR">
@@ -2122,6 +2456,9 @@ function printReportPdf() {
           h1 { margin: 0; font-size: 28px; }
           h2 { margin: 28px 0 12px; font-size: 17px; }
           p { color: #5f6862; line-height: 1.5; }
+          .cover { border-radius: 24px; padding: 30px; margin-bottom: 24px; color: #fff; background: #0E1F1B; }
+          .cover span { color: #E7B86A; font-weight: 800; text-transform: uppercase; font-size: 11px; }
+          .cover h1 { margin-top: 10px; font-size: 42px; max-width: 640px; }
           .brand { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid #DDD8CE; padding-bottom: 18px; }
           .kpis, .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
           .card { border: 1px solid #DDD8CE; border-radius: 14px; padding: 14px; background: #FBFAF6; }
@@ -2130,6 +2467,16 @@ function printReportPdf() {
           table { width: 100%; border-collapse: collapse; margin-top: 8px; }
           th, td { border-bottom: 1px solid #E6E0D6; padding: 10px 8px; text-align: left; font-size: 12px; }
           th { color: #6F766F; text-transform: uppercase; font-size: 10px; }
+          .visual-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 14px; margin-top: 18px; }
+          .bar-row { display: grid; grid-template-columns: 130px 1fr 96px; gap: 10px; align-items: center; margin: 10px 0; font-size: 12px; }
+          .bar-track { height: 10px; border-radius: 999px; background: #E7E2D8; overflow: hidden; }
+          .bar-track i { display: block; height: 100%; border-radius: inherit; background: #1F8A5F; }
+          .flow-bars { display: grid; grid-template-columns: repeat(${Math.max(monthRows.length, 1)}, 1fr); gap: 10px; align-items: end; min-height: 170px; }
+          .flow-month { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; align-items: end; height: 150px; }
+          .flow-month i { display: block; border-radius: 8px 8px 0 0; min-height: 4px; }
+          .flow-month .income { background: #1F8A5F; }
+          .flow-month .expense { background: #C0392B; }
+          .flow-label { text-align: center; color: #6F766F; font-size: 10px; margin-top: 6px; }
           .negative { color: #C0392B; }
           .positive { color: #1F8A5F; }
           .weekly { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -2139,6 +2486,7 @@ function printReportPdf() {
       </head>
       <body>
         <main class="page">
+          <section class="cover"><span>Relatório profissional</span><h1>Resumo financeiro de ${escapeHtml(monthLabel(analysis.selectedMonth || selectedAnalysisMonth))}</h1><p>Gerado com dados cadastrados ou importados pelo usuário no FinTrack AI.</p></section>
           <section class="brand">
             <div><h1>FinTrack AI</h1><p>Relatório financeiro de ${escapeHtml(monthLabel(analysis.selectedMonth || selectedAnalysisMonth))}</p></div>
             <p>Gerado em ${escapeHtml(new Date().toLocaleString("pt-BR"))}</p>
@@ -2148,6 +2496,10 @@ function printReportPdf() {
             <div class="card"><span>Saídas</span><strong class="negative">${currency.format(analysis.totalExpenses || 0)}</strong></div>
             <div class="card"><span>Saldo</span><strong class="${analysis.balance >= 0 ? "positive" : "negative"}">${currency.format(analysis.balance || 0)}</strong></div>
             <div class="card"><span>Saúde financeira</span><strong>${score.score ? `${score.score}/100` : "Sem dados"}</strong></div>
+          </section>
+          <section class="visual-grid">
+            <div class="card"><h2>Gráfico de categorias</h2>${topCategories.map((item) => `<div class="bar-row"><span>${escapeHtml(item.category)}</span><span class="bar-track"><i style="width:${Math.round((Number(item.total || 0) / maxCategory) * 100)}%"></i></span><strong>${currency.format(item.total || 0)}</strong></div>`).join("") || `<p>Sem categorias no período.</p>`}</div>
+            <div class="card"><h2>Evolução real</h2><div class="flow-bars">${monthRows.map((item) => `<div><div class="flow-month"><i class="income" style="height:${Math.round((Number(item.income || 0) / maxMonthValue) * 100)}%"></i><i class="expense" style="height:${Math.round((Number(item.expenses || 0) / maxMonthValue) * 100)}%"></i></div><div class="flow-label">${escapeHtml(item.month)}</div></div>`).join("") || `<p>Sem meses suficientes.</p>`}</div></div>
           </section>
           <h2>Análise</h2>
           <p>${escapeHtml(aiText)}</p>
@@ -2287,6 +2639,7 @@ statementImportForm?.addEventListener("submit", async (event) => {
   const data = new FormData();
   data.append("statement", input.files[0]);
   try {
+    updateImportStepper(1);
     if (button) {
       button.disabled = true;
       button.innerHTML = `<span class="button-spinner"></span><span>Lendo...</span>`;
@@ -2301,6 +2654,7 @@ statementImportForm?.addEventListener("submit", async (event) => {
     importPreset = payload.preset || null;
     renderImportMapping(payload.columns || [], importMapping);
     renderImportPreview(payload.candidates || [], payload.notice, { ...(payload.summary || {}), ai: payload.ai, preset: payload.preset }, payload.errors);
+    updateImportStepper((payload.candidates || []).length ? ((payload.candidates || []).some((item) => item.category === "Categoria pendente") ? 4 : 3) : 2);
     toast((payload.candidates || []).length ? "Arquivo lido. Revise a prévia antes de importar." : "Arquivo lido. Confira o mapeamento das colunas.");
   } catch (error) {
     toast(error.message);
@@ -2311,6 +2665,15 @@ statementImportForm?.addEventListener("submit", async (event) => {
     }
   }
 });
+
+function updateImportStepper(step) {
+  if (!importStepper) return;
+  [...importStepper.querySelectorAll("span")].forEach((item, index) => {
+    const number = index + 1;
+    item.classList.toggle("active", number === step);
+    item.classList.toggle("done", number < step);
+  });
+}
 
 function renderImportMapping(columns, mapping) {
   const hasColumns = columns.length > 0;
@@ -2354,6 +2717,7 @@ buildImportPreviewBtn?.addEventListener("click", async () => {
       body: JSON.stringify({ rows: importRows, mapping: importMapping }),
     });
     renderImportPreview(preview.candidates, "Confira a prévia antes de confirmar a importação.", { ...(preview.summary || {}), ai: preview.ai }, preview.errors);
+    updateImportStepper(3);
   } catch (error) {
     toast(error.message);
   }
@@ -2425,6 +2789,7 @@ function renderImportPreview(items, notice, summary = {}, errors = []) {
   }).join("") || `<tr><td colspan="8"><div class="empty-compact">Arquivo lido, mas nenhuma transação foi reconhecida. Revise o mapeamento de data, descrição e valor.</div></td></tr>`;
   setHidden(importPreviewCard, false);
   setHidden(confirmImportBtn, importCandidates.filter((item) => !item.duplicate).length === 0);
+  updateImportStepper(importCandidates.some((item) => item.category === "Categoria pendente") ? 4 : 3);
   refreshIcons();
 }
 
@@ -2489,6 +2854,7 @@ importAssistant?.addEventListener("click", (event) => {
     changed += 1;
   });
   renderImportPreview(importCandidates, importNotice.textContent, importPreviewSummary, importPreviewErrors);
+  updateImportStepper(importCandidates.some((item) => item.category === "Categoria pendente") ? 4 : 5);
   toast(`${changed} lançamento(s) atualizado(s) em lote.`);
 });
 
@@ -2500,6 +2866,7 @@ confirmImportBtn.addEventListener("click", async () => {
   if (selected.some((item) => item.category === "Categoria pendente")) return toast("Defina somente as categorias pendentes.");
   const result = await api("/api/import/transactions", { method: "POST", body: JSON.stringify({ transactions: selected, source: importSource }) });
   toast(`${result.imported} transações importadas. ${result.skippedDuplicates || 0} duplicadas ignoradas.`);
+  updateImportStepper(5);
   setHidden(importPreviewCard, true);
   setHidden(importMappingCard, true);
   await refreshFinancialData();
@@ -2528,15 +2895,20 @@ function auditMessage(row) {
     TRANSACTION_CREATED: "Transação criada",
     TRANSACTION_UPDATED: "Transação editada",
     TRANSACTION_DELETED: "Transação excluída",
+    TRANSACTIONS_BULK_DELETED: `${details.deleted || 0} lançamento(s) excluído(s) em massa`,
+    TRANSACTIONS_BULK_CATEGORY_UPDATED: `${details.updated || 0} lançamento(s) categorizado(s) em massa${details.category ? `: ${details.category}` : ""}`,
     TRANSACTIONS_IMPORTED: `${details.imported || 0} transação(ões) importada(s)`,
     PDF_STATEMENT_ANALYZED: "Extrato PDF analisado",
     STATEMENT_FILE_ANALYZED: "Arquivo de extrato analisado",
     FINANCIAL_GOAL_UPDATED: `Meta salva${details.goalName ? `: ${details.goalName}` : ""}`,
     FINANCIAL_GOAL_DELETED: `Meta excluída${details.goalName ? `: ${details.goalName}` : ""}`,
+    FINANCIAL_GOAL_PRIMARY_SET: `Meta principal alterada${details.goalName ? `: ${details.goalName}` : ""}`,
     GOAL_CONTRIBUTION_CREATED: `Valor guardado na meta: ${currency.format(details.amount || 0)}`,
+    GOAL_CONTRIBUTION_UPDATED: `Aporte editado na meta: ${currency.format(details.amount || 0)}`,
     GOAL_CONTRIBUTION_DELETED: `Aporte removido da meta: ${currency.format(details.amount || 0)}`,
     MONTHLY_CLOSING_CREATED: `Fechamento mensal salvo${details.month ? `: ${monthLabel(details.month)}` : ""}`,
     AI_ANALYSIS_REQUESTED: "Análise financeira solicitada",
+    AI_ANALYSIS_OFFICIAL_SAVED: `Análise oficial salva${details.month ? `: ${monthLabel(details.month)}` : ""}`,
     DATA_EXPORTED: "Dados baixados pelo usuário",
   };
   return messages[row.action] || row.action;
@@ -2682,6 +3054,7 @@ async function boot(options = {}) {
       await loadAnalysis(false);
       await loadAIStatus();
       await loadMonthlyClosings();
+      await loadAIHistory();
     } catch (error) {
       console.error("Erro ao carregar dados do painel:", error);
       toast("Conta aberta. Atualize a página se algum card não carregar.");
