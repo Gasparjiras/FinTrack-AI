@@ -102,6 +102,8 @@ async function classifyTransactions(candidates, learnedRules) {
     "Respeite regras aprendidas do usuário quando o comerciante combinar.",
     "Pix recebido, salário e transferência recebida são entrada/Receita.",
     "Compras, pagamentos, tarifas e Pix enviado são saída.",
+    "Exemplos: Spotify/Netflix/Disney/HBO/Amazon Prime = Assinaturas; Uber/99/combustível/seguro da moto = Transporte; iFood/restaurante/padaria = Alimentação; supermercado/atacado/mercado = Mercado; faculdade/curso = Educação; celular/internet/energia/aluguel = Contas fixas.",
+    "Quando houver valor positivo, mas a descrição indicar compra, cartão, pagamento ou categoria de despesa, classifique como saída.",
     "Use Categoria pendente apenas quando a descrição realmente não permitir uma classificação segura.",
     "Não invente transações e preserve o índice original.",
   ].join(" ");

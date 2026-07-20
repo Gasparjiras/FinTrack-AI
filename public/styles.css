@@ -8857,3 +8857,178 @@ table,
     width: 100%;
   }
 }
+
+.dashboard-active .section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.dashboard-active .section-title-row h3 {
+  margin: 0;
+}
+
+.dashboard-active .section-title-row span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(31, 138, 95, 0.1);
+  color: #1f6f50;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-active .ai-details {
+  margin-top: 12px;
+  border: 1px solid rgba(14, 31, 27, 0.1);
+  border-radius: 16px;
+  background: #fffdf8;
+  padding: 12px;
+}
+
+.dashboard-active .ai-details summary {
+  cursor: pointer;
+  color: #1f8a5f;
+  font-weight: 900;
+}
+
+.dashboard-active .ai-details[open] summary {
+  margin-bottom: 12px;
+}
+
+.dashboard-active .classification-quality > p {
+  margin: 2px 0 0;
+  color: #58645f;
+  line-height: 1.5;
+}
+
+.dashboard-active .classification-summary-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-active .classification-summary-card div {
+  border: 1px solid rgba(14, 31, 27, 0.1);
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: #fffdf8;
+}
+
+.dashboard-active .classification-summary-card span {
+  display: block;
+  color: #6b756f;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dashboard-active .classification-summary-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #0e1f1b;
+  font-family: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.dashboard-active .compact-alerts,
+.dashboard-active .compact-recommendations {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+}
+
+.dashboard-active .ai-alert,
+.dashboard-active .recommendation-card {
+  min-height: auto;
+}
+
+.dashboard-active .ai-alert strong,
+.dashboard-active .recommendation-card strong {
+  line-height: 1.25;
+}
+
+.dashboard-active .ai-alert span,
+.dashboard-active .recommendation-card span {
+  line-height: 1.45;
+}
+
+.dashboard-active .budget-suggestion-table {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-active .budget-suggestion-head,
+.dashboard-active .budget-suggestion-table article {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(98px, 0.85fr) minmax(112px, 0.85fr) minmax(86px, 0.65fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-active .budget-suggestion-head {
+  padding: 0 14px;
+  color: #6b756f;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-active .budget-suggestion-table article {
+  border: 1px solid rgba(14, 31, 27, 0.1);
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: #fffdf8;
+}
+
+.dashboard-active .budget-suggestion-table article.reduzir {
+  border-color: rgba(224, 138, 60, 0.34);
+  background: rgba(224, 138, 60, 0.055);
+}
+
+.dashboard-active .budget-suggestion-table strong,
+.dashboard-active .budget-suggestion-table b {
+  color: #0e1f1b;
+  font-weight: 900;
+}
+
+.dashboard-active .budget-suggestion-table span,
+.dashboard-active .budget-suggestion-table b {
+  font-family: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+}
+
+.dashboard-active .budget-suggestion-table small {
+  grid-column: 1 / -1;
+  color: #6b756f;
+  line-height: 1.45;
+}
+
+.dashboard-active .extra-budget-rows {
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-active .classification-summary-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-active .section-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-active .classification-summary-card,
+  .dashboard-active .budget-suggestion-table article {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-active .budget-suggestion-head {
+    display: none;
+  }
+}

@@ -1577,7 +1577,7 @@ function renderAIReport() {
     mainExpenses: ai?.mainExpenses?.length ? ai.mainExpenses : analysis.aiBlocks?.mainExpenses || [],
     nextActions: ai?.nextActions?.length ? ai.nextActions : analysis.aiBlocks?.nextActions || [],
   };
-  const alerts = [
+  const alerts = dedupeByTitleAndMessage([
     ...(ai?.alerts || []),
     ...analysis.budgetAlerts.map((item) => ({
       severity: "atencao",
@@ -1589,7 +1589,9 @@ function renderAIReport() {
       title: item.title,
       message: item.message,
     })),
-  ];
+  ]);
+  const visibleAlerts = prioritizeAlerts(alerts).slice(0, 3);
+  const visibleRecommendations = prioritizeRecommendations(recommendations).slice(0, 3);
   const summary = ai?.executiveSummary || localSummary();
   const provider = ai ? `OpenAI ${analysis.aiStatus.model}${analysis.aiStatus.cached ? " - resposta em cache" : ""}` : "Análise local";
   aiProvider.textContent = provider;
@@ -1600,14 +1602,13 @@ function renderAIReport() {
       <div><span class="consultant-label">${escapeHtml(provider)}</span><h3>Diagnóstico financeiro</h3><p>${escapeHtml(summary)}</p></div>
     </article>
     ${renderScoreInsightBlock()}
-    ${renderRecurringInsightBlock()}
     ${renderClassificationSummaryBlock()}
     ${renderMonthlyComparisonBlock()}
-    ${renderTextBlock("Diagnóstico financeiro", blocks.diagnosis, "scan-search")}
-    ${renderTextBlock("Principais gastos", blocks.mainExpenses, "receipt-text")}
-    ${alerts.length ? `<div class="ai-section"><h3>Alertas</h3><div class="ai-alerts">${alerts.map((item) => `<div class="ai-alert ${escapeHtml(item.severity)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}</div></div>` : renderTextBlock("Alertas", analysis.aiBlocks?.alerts || [], "triangle-alert")}
-    <div class="ai-section"><h3>Oportunidades de economia</h3><div class="recommendations">${recommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}</div></div>
+    ${renderTextBlock("Diagnóstico objetivo", blocks.diagnosis.slice(0, 3), "scan-search")}
+    ${renderFocusAlertsBlock(visibleAlerts, alerts)}
+    ${renderFocusRecommendationsBlock(visibleRecommendations, recommendations)}
     ${renderBudgetSuggestionBlock()}
+    ${renderRecurringInsightBlock()}
     ${renderGoalPlanBlock(ai)}
     ${renderWeeklyPlanBlock(ai)}
     ${renderEducationInsightBlock(ai)}
@@ -1615,6 +1616,51 @@ function renderAIReport() {
   `;
   if (analysis.aiStatus.warning) toast(analysis.aiStatus.warning);
   refreshIcons();
+}
+
+function dedupeByTitleAndMessage(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const key = normalizeText(`${item.title || ""}|${item.message || ""}`);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function prioritizeAlerts(items) {
+  const weights = { critico: 4, critical: 4, atencao: 3, warning: 3, info: 1 };
+  return [...(items || [])].sort((a, b) => (weights[b.severity] || 2) - (weights[a.severity] || 2));
+}
+
+function prioritizeRecommendations(items) {
+  return [...(items || [])].sort((a, b) => Number(b.potentialMonthlySavings || 0) - Number(a.potentialMonthlySavings || 0));
+}
+
+function renderFocusAlertsBlock(visibleAlerts, allAlerts) {
+  if (!allAlerts.length) return renderTextBlock("Alertas principais", analysis.aiBlocks?.alerts || [], "triangle-alert");
+  const hidden = Math.max(allAlerts.length - visibleAlerts.length, 0);
+  return `
+    <div class="ai-section ai-focus-section">
+      <div class="section-title-row"><h3>Alertas principais</h3><span>mostrando ${visibleAlerts.length} de ${allAlerts.length}</span></div>
+      <div class="ai-alerts compact-alerts">
+        ${visibleAlerts.map((item) => `<div class="ai-alert ${escapeHtml(item.severity || "info")}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}
+      </div>
+      ${hidden ? `<details class="ai-details"><summary>Ver mais ${hidden} alerta(s)</summary><div class="ai-alerts compact-alerts">${allAlerts.slice(visibleAlerts.length).map((item) => `<div class="ai-alert ${escapeHtml(item.severity || "info")}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div>`).join("")}</div></details>` : ""}
+    </div>
+  `;
+}
+
+function renderFocusRecommendationsBlock(visibleRecommendations, allRecommendations) {
+  return `
+    <div class="ai-section ai-focus-section">
+      <div class="section-title-row"><h3>Oportunidades de economia</h3><span>priorizadas por impacto</span></div>
+      <div class="recommendations compact-recommendations">
+        ${visibleRecommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings || 0)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}
+      </div>
+      ${allRecommendations.length > visibleRecommendations.length ? `<details class="ai-details"><summary>Ver outras ${allRecommendations.length - visibleRecommendations.length} oportunidade(s)</summary><div class="recommendations compact-recommendations">${allRecommendations.slice(visibleRecommendations.length).map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings || 0)}/mês</b></article>`).join("")}</div></details>` : ""}
+    </div>
+  `;
 }
 
 function renderMonthlyComparisonBlock() {
@@ -1686,18 +1732,52 @@ function renderEducationInsightBlock(ai) {
 
 function renderClassificationSummaryBlock() {
   const summary = analysis.classificationSummary || {};
-  const sources = Object.entries(summary.sources || {});
-  const confidence = Object.entries(summary.confidence || {});
-  if (!sources.length && !confidence.length) return "";
+  const quality = buildClassificationQuality(summary);
+  if (!quality.total) return "";
   return `
-    <div class="ai-section">
-      <h3>Classificação automática</h3>
-      <div class="automation-grid">
-        ${sources.map(([source, count]) => `<div><span>${escapeHtml(sourceLabel(source))}</span><strong>${count}</strong></div>`).join("")}
-        ${confidence.map(([item, count]) => `<div><span>${escapeHtml(confidenceLabel(item))}</span><strong>${count}</strong></div>`).join("")}
+    <div class="ai-section classification-quality">
+      <div class="section-title-row"><h3>Qualidade da categorização</h3><span>${quality.pending ? "revisar pendências" : "sem pendências"}</span></div>
+      <div class="classification-summary-card">
+        <div><span>Lançamentos analisados</span><strong>${quality.total}</strong></div>
+        <div><span>Categorizados pela IA</span><strong>${quality.auto || quality.highConfidence}</strong></div>
+        <div><span>Precisam de revisão</span><strong class="${quality.pending ? "value-negative" : "value-positive"}">${quality.pending}</strong></div>
+        <div><span>Aprendeu com você</span><strong>${quality.corrected}</strong></div>
       </div>
+      <p>${escapeHtml(quality.message)}</p>
+      <details class="ai-details"><summary>Ver detalhes técnicos</summary><div class="automation-grid compact">${quality.detailRows.map((item) => `<div><span>${escapeHtml(item.label)}</span><strong>${item.count}</strong></div>`).join("")}</div></details>
     </div>
   `;
+}
+
+function buildClassificationQuality(summary) {
+  const sourceRows = Object.entries(summary.sources || {}).map(([label, count]) => ({ label: sourceLabel(label), count: Number(count || 0) }));
+  const confidenceRows = Object.entries(summary.confidence || {}).map(([label, count]) => ({ label: confidenceLabel(label), count: Number(count || 0), raw: label }));
+  const total = sourceRows.reduce((sum, item) => sum + item.count, 0) || confidenceRows.reduce((sum, item) => sum + item.count, 0);
+  const pending = Number(analysis?.pendingCount || 0);
+  const correctedFromSource = sourceRows
+    .filter((item) => /aprendida/i.test(item.label))
+    .reduce((sum, item) => sum + item.count, 0);
+  const correctedFromConfidence = confidenceRows
+    .filter((item) => /aprendida|corrigida/i.test(item.label))
+    .reduce((sum, item) => sum + item.count, 0);
+  const corrected = Math.max(correctedFromSource, correctedFromConfidence);
+  const highConfidence = confidenceRows.reduce((sum, item) => {
+    const raw = String(item.raw || item.label);
+    const numeric = Number((raw.match(/(\d{2,3})/) || [])[1] || 0);
+    const high = numeric >= 80 || /alta|aprendida|corrigida/i.test(raw);
+    return high ? sum + item.count : sum;
+  }, 0);
+  const auto = sourceRows
+    .filter((item) => /IA|regra local|regra aprendida/i.test(item.label))
+    .reduce((sum, item) => sum + item.count, 0);
+  const message = pending
+    ? `${pending} lançamento(s) ficaram com baixa confiança. Revise apenas esses casos para melhorar as próximas importações.`
+    : `${auto || total} lançamento(s) foram categorizados sem pendência. Se alguma categoria estiver errada, corrija uma vez para o sistema aprender.`;
+  const detailRows = [
+    ...sourceRows.map((item) => ({ label: `Origem: ${item.label}`, count: item.count })),
+    ...confidenceRows.map((item) => ({ label: `Confiança: ${item.label}`, count: item.count })),
+  ];
+  return { total, pending, corrected, highConfidence, auto, message, detailRows };
 }
 
 function renderScoreInsightBlock() {
@@ -1739,20 +1819,34 @@ function renderTextBlock(title, items, icon) {
 }
 
 function renderBudgetSuggestionBlock() {
-  const items = (analysis?.categoryBudgetSuggestions || []).slice(0, 6);
+  const items = [...(analysis?.categoryBudgetSuggestions || [])]
+    .filter((item) => Number(item.suggestedMonthly || 0) > 0)
+    .sort((a, b) => {
+      const aNeed = a.status === "reduzir" ? 1 : 0;
+      const bNeed = b.status === "reduzir" ? 1 : 0;
+      return bNeed - aNeed || Number(b.difference || 0) - Number(a.difference || 0);
+    });
   if (!items.length) return "";
+  const visible = items.slice(0, 4);
   return `
-    <div class="ai-section">
-      <h3>Quanto gastar por categoria</h3>
-      <div class="budget-suggestion-grid">
-        ${items.map((item) => `
-          <article class="budget-suggestion-card ${item.status}">
-            <div><strong>${escapeHtml(item.category)}</strong><span>${escapeHtml(item.reason)}</span></div>
-            <b>${currency.format(item.suggestedMonthly)}/mês</b>
-            <small>Hoje: ${currency.format(item.currentMonthly)}/mês</small>
-          </article>
-        `).join("")}
+    <div class="ai-section budget-table-section">
+      <div class="section-title-row"><h3>Plano de gastos por categoria</h3><span>prioridade do mês</span></div>
+      <div class="budget-suggestion-table">
+        <div class="budget-suggestion-head"><span>Categoria</span><span>Hoje</span><span>Sugerido</span><span>Ajuste</span></div>
+        ${visible.map((item) => {
+          const difference = Number(item.difference || 0);
+          return `
+            <article class="${item.status}">
+              <strong>${escapeHtml(item.category)}</strong>
+              <span>${currency.format(item.currentMonthly || 0)}/mês</span>
+              <span>${currency.format(item.suggestedMonthly || 0)}/mês</span>
+              <b class="${difference > 0 ? "value-negative" : "value-positive"}">${difference > 0 ? `-${currency.format(difference)}` : "ok"}</b>
+              <small>${escapeHtml(item.reason)}</small>
+            </article>
+          `;
+        }).join("")}
       </div>
+      ${items.length > visible.length ? `<details class="ai-details"><summary>Ver todas as categorias</summary><div class="budget-suggestion-table extra-budget-rows">${items.slice(visible.length).map((item) => `<article class="${item.status}"><strong>${escapeHtml(item.category)}</strong><span>${currency.format(item.currentMonthly || 0)}/mês</span><span>${currency.format(item.suggestedMonthly || 0)}/mês</span><b>${Number(item.difference || 0) > 0 ? `-${currency.format(item.difference)}` : "ok"}</b><small>${escapeHtml(item.reason)}</small></article>`).join("")}</div></details>` : ""}
     </div>
   `;
 }

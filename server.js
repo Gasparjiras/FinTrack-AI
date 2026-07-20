@@ -1035,16 +1035,16 @@ function categorize(description, learnedRules = []) {
     }
   }
   const mappings = [
-    ["Assinaturas", /spotify|netflix|hbo max|hbomax|disney plus|disney|prime video|amazon prime|globoplay|deezer|youtube premium|apple music|paramount|crunchyroll/],
-    ["Transporte", /\buber\b|99app|\b99\b|taxi|combustivel|gasolina|\bposto\b|shell|ipiranga|petrobras|metro|onibus|estacionamento|sem parar/],
-    ["Alimentação", /ifood|rappi|restaurante|lanchonete|mcdonald|burger king|padaria|cafeteria|delivery|pizzaria|churrascaria/],
-    ["Mercado", /supermercado|\bmercado\b|pao de acucar|atacadao|carrefour|assai|\bextra\b|hortifruti|sams club|dia brasil/],
-    ["Lazer", /cinema|cinemark|ingresso|steam|playstation|xbox|parque|teatro|\bshow\b|\bbar\b|boliche/],
-    ["Contas fixas", /aluguel|condominio|energia|enel|cemig|light|sabesp|saneamento|conta de agua|internet|vivo fibra|claro net|telefone|celular/],
-    ["Compras", /mercado livre|shopee|magazine luiza|magalu|casas bahia|renner|riachuelo|centauro|lojas americanas|amazon marketplace/],
-    ["Saúde", /farmacia|drogasil|droga raia|pague menos|hospital|clinica|laboratorio|consulta|medico|dentista|plano de saude/],
-    ["Educação", /curso|udemy|alura|escola|faculdade|universidade|livraria|\blivro\b|mensalidade escolar/],
-    ["Receita", /salario|pix recebido|deposito|credito recebido|estorno|rendimento|transferencia recebida|provento/],
+    ["Assinaturas", /spotify|netflix|hbo max|hbomax|disney plus|disney|prime video|amazon prime|globoplay|deezer|youtube premium|apple music|paramount|crunchyroll|assinatura|mensalidade app/],
+    ["Transporte", /\buber\b|99app|\b99\b|taxi|combustivel|gasolina|\bposto\b|shell|ipiranga|petrobras|metro|onibus|estacionamento|sem parar|pedagio|ipva|licenciamento|seguro da moto|seguro moto|seguro auto|oficina|mecanica|borracharia/],
+    ["Alimentação", /ifood|rappi|restaurante|lanchonete|mcdonald|burger king|padaria|cafeteria|delivery|pizzaria|churrascaria|lanche|pastelaria|sorveteria|acai/],
+    ["Mercado", /supermercado|\bmercado\b|pao de acucar|atacadao|carrefour|assai|\bextra\b|hortifruti|sams club|dia brasil|mercearia|sacolao|atacado|mini mercado/],
+    ["Lazer", /cinema|cinemark|ingresso|steam|playstation|xbox|parque|teatro|\bshow\b|\bbar\b|boliche|festa|evento|hotel|viagem/],
+    ["Contas fixas", /aluguel|condominio|energia|enel|cemig|light|sabesp|saneamento|conta de agua|internet|vivo fibra|claro net|\bclaro\b|\btim\b|\boi\b|telefone|celular|plano celular/],
+    ["Compras", /mercado livre|shopee|magazine luiza|magalu|casas bahia|renner|riachuelo|centauro|lojas americanas|amazon marketplace|\bamazon\b|shein|temu|aliexpress|shopping|loja/],
+    ["Saúde", /farmacia|drogaria|drogasil|droga raia|pague menos|hospital|clinica|laboratorio|consulta|medico|dentista|plano de saude|exame/],
+    ["Educação", /curso|udemy|alura|escola|faculdade|universidade|livraria|\blivro\b|mensalidade escolar|ead|anhanguera|unopar|cruzeiro do sul|estacio/],
+    ["Receita", /salario|pix recebido|deposito|credito recebido|estorno|reembolso|rendimento|transferencia recebida|ted recebida|doc recebido|provento/],
     ["Outros", /tarifa|juros|multa|imposto|iof|saque|transferencia enviada/],
   ];
   for (const [category, pattern] of mappings) {
