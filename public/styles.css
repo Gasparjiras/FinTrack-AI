@@ -9655,3 +9655,65 @@ body.dashboard-active {
     grid-template-columns: 1fr !important;
   }
 }
+
+.demo-access-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+  border: 1px solid rgba(108, 99, 255, .20);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(108, 99, 255, .055);
+}
+
+.demo-access-card strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.demo-access-card span {
+  display: block;
+  margin-top: 3px;
+  color: #64716c;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.demo-access-card button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+body.demo-active .status-pill {
+  border-color: rgba(108, 99, 255, .24) !important;
+  background: rgba(108, 99, 255, .10) !important;
+  color: var(--ft-ai) !important;
+}
+
+body.demo-active .workspace-header::after {
+  content: "Dados fictícios para demonstração acadêmica";
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 10px;
+  border: 1px solid rgba(108, 99, 255, .22);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(108, 99, 255, .075);
+  color: var(--ft-ai);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+@media (max-width: 680px) {
+  .demo-access-card {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-access-card button {
+    width: 100%;
+  }
+}

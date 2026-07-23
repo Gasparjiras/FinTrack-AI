@@ -13,6 +13,35 @@ O sistema nao mostra dados ficticios para preencher a tela. O painel inicia limp
 
 Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma transacao importada ainda" e "Crie sua primeira meta para acompanhar seu progresso".
 
+## Conta de Demonstracao para TCC
+
+Para apresentacao academica existe uma conta separada, marcada como demonstracao. Ela usa dados ficticios e nao afeta as contas normais.
+
+Na tela inicial, clique em:
+
+```text
+Abrir demo
+```
+
+O sistema entra na conta:
+
+```text
+E-mail: tcc@fintrack.ai
+Senha: FinTrack@2026
+```
+
+Ao abrir a demonstracao, o app restaura automaticamente um conjunto pronto com:
+
+- lancamentos de dois meses;
+- entradas, gastos e aportes de metas;
+- duas metas financeiras;
+- regras aprendidas de categoria;
+- historico de analise;
+- fechamento mensal;
+- logs de auditoria.
+
+Contas criadas manualmente continuam iniciando limpas, sem transacoes, metas ou graficos ficticios.
+
 ## Funcionalidades
 
 - Home com identidade FinTrack AI, login/cadastro e consentimento LGPD.

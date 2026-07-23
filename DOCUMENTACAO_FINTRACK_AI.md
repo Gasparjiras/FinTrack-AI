@@ -6,6 +6,8 @@ O FinTrack AI e um aplicativo web local de educacao financeira e gestao de gasto
 
 A versao atual nao usa dados ficticios para preencher telas. O sistema inicia limpo e so exibe informacoes financeiras depois que o usuario cadastra ou importa seus proprios dados.
 
+Existe uma excecao controlada para apresentacao academica: a conta de demonstracao TCC. Ela e separada das contas comuns, possui dados ficticios identificados como demonstracao e pode ser restaurada automaticamente pelo botao "Abrir demo" na tela inicial. As demais contas continuam iniciando vazias.
+
 ## 2. Fluxo Principal
 
 1. O usuario cria uma conta.
@@ -27,6 +29,7 @@ A versao atual nao usa dados ficticios para preencher telas. O sistema inicia li
 - Titulo principal.
 - Subtitulo curto.
 - Botoes Criar conta e Entrar.
+- Botao Abrir demo para acessar a conta de demonstracao TCC.
 - Card de login/cadastro.
 - Beneficios resumidos: painel claro, analise com IA e privacidade.
 

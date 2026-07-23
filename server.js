@@ -258,6 +258,7 @@ ensureColumn("financial_goals", "priority", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("financial_goals", "is_primary", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("goal_contributions", "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 ensureColumn("user_consents", "revoked_at", "TEXT");
+ensureColumn("users", "is_demo", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("transactions", "type", "TEXT NOT NULL DEFAULT 'saida'");
 ensureColumn("transactions", "classification_confidence", "TEXT NOT NULL DEFAULT 'manual'");
 ensureColumn("transactions", "classification_source", "TEXT NOT NULL DEFAULT 'manual'");
@@ -347,7 +348,7 @@ function getUser(req) {
   const token = parseCookies(req).session;
   const session = token && sessions.get(token);
   if (!session) return null;
-  return db.prepare("SELECT id, name, email, created_at FROM users WHERE id = ?").get(session.userId) || null;
+  return db.prepare("SELECT id, name, email, is_demo, created_at FROM users WHERE id = ?").get(session.userId) || null;
 }
 
 function requireUser(req, res) {
@@ -856,6 +857,220 @@ for (const [name, limit] of LEGACY_DEFAULT_LIMITS) {
 function ensureDefaultCategories(userId) {
   const insert = db.prepare("INSERT OR IGNORE INTO categories (user_id, name, monthly_limit, color, is_system) VALUES (?, ?, ?, ?, 1)");
   for (const [name, limit, color] of DEFAULT_CATEGORIES) insert.run(userId, name, limit, color);
+}
+
+const DEMO_ACCOUNT = {
+  name: "Pedro Gaspar - Demonstração TCC",
+  email: "tcc@fintrack.ai",
+  password: "FinTrack@2026",
+};
+
+function demoMonthValue(offset = 0) {
+  const date = new Date();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + offset);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function demoDate(monthValue, day) {
+  const [year, month] = String(monthValue).split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
+function ensureDemoAccount(req) {
+  const email = DEMO_ACCOUNT.email.toLowerCase();
+  let user = db.prepare("SELECT id FROM users WHERE lower(email) = ?").get(email);
+  if (!user) {
+    const passwordHash = bcrypt.hashSync(DEMO_ACCOUNT.password, 12);
+    const result = db.prepare("INSERT INTO users (name, email, password_hash, is_demo) VALUES (?, ?, ?, 1)")
+      .run(DEMO_ACCOUNT.name, email, passwordHash);
+    user = { id: result.lastInsertRowid };
+  } else {
+    db.prepare("UPDATE users SET name = ?, is_demo = 1 WHERE id = ?").run(DEMO_ACCOUNT.name, user.id);
+  }
+  seedDemoAccount(user.id, req);
+  return db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+}
+
+function clearDemoAccountData(userId) {
+  db.prepare("DELETE FROM goal_contributions WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM transactions WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM financial_goals WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM user_goals WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM goal_change_history WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM ai_analysis_history WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM ai_daily_usage WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM monthly_closings WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM audit_logs WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM categories WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM user_consents WHERE user_id = ?").run(userId);
+}
+
+function insertDemoTransaction(insert, userId, month, day, description, value, category, paymentMethod, status = "Concluida") {
+  const type = value > 0 ? "entrada" : "saida";
+  insert.run(
+    userId,
+    description,
+    value,
+    demoDate(month, day),
+    category,
+    type,
+    "alta",
+    "demo tcc",
+    paymentMethod,
+    status,
+    "demo tcc",
+    `tcc-${month}-${day}-${normalizeDescription(description).slice(0, 28)}`,
+  );
+}
+
+function seedDemoAccount(userId, req) {
+  const previousMonth = demoMonthValue(-1);
+  const currentMonth = demoMonthValue(0);
+  db.exec("BEGIN");
+  try {
+    clearDemoAccountData(userId);
+    ensureDefaultCategories(userId);
+    const latestTerm = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get("1.0");
+    db.prepare("INSERT INTO user_consents (user_id, term_id) VALUES (?, ?)").run(userId, latestTerm.id);
+
+    const insertTransaction = db.prepare(`
+      INSERT INTO transactions (
+        user_id, description, value, date, category, type,
+        classification_confidence, classification_source, payment_method,
+        transaction_status, source, external_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const demoTransactions = [
+      [previousMonth, 5, "Salário Tech Ltda", 4200, "Receita", "Transferência bancária"],
+      [previousMonth, 7, "Freelance Landing Page", 520, "Receita", "PIX recebido"],
+      [previousMonth, 5, "Aluguel Residencial", -1350, "Contas fixas", "Débito automático"],
+      [previousMonth, 6, "Internet Fibra 500MB", -119.9, "Contas fixas", "Cartão de crédito"],
+      [previousMonth, 8, "Energia Elétrica", -176.4, "Contas fixas", "Boleto"],
+      [previousMonth, 8, "Supermercado Atacadão", -512.3, "Mercado", "Cartão de débito"],
+      [previousMonth, 10, "iFood Restaurante", -89.7, "Alimentação", "Cartão de crédito"],
+      [previousMonth, 12, "Uber Viagem", -44.8, "Transporte", "Cartão de crédito"],
+      [previousMonth, 14, "Spotify Premium", -21.9, "Assinaturas", "Cartão de crédito"],
+      [previousMonth, 15, "Netflix", -39.9, "Assinaturas", "Cartão de crédito"],
+      [previousMonth, 17, "Cinema Shopping Center", -72, "Lazer", "Cartão de crédito"],
+      [previousMonth, 18, "Farmácia Drogasil", -58.25, "Saúde", "Cartão de débito"],
+      [previousMonth, 20, "Curso Online Finanças", -79.9, "Educação", "Cartão de crédito"],
+      [previousMonth, 22, "Mercado Livre", -335.8, "Compras", "Cartão de crédito"],
+      [previousMonth, 25, "Restaurante Centro", -64.6, "Alimentação", "Cartão de crédito"],
+      [currentMonth, 5, "Salário Tech Ltda", 4800, "Receita", "Transferência bancária"],
+      [currentMonth, 6, "Freelance Ajustes Site", 650, "Receita", "PIX recebido"],
+      [currentMonth, 7, "Reembolso Transporte", 150, "Receita", "PIX recebido"],
+      [currentMonth, 5, "Aluguel Residencial", -1350, "Contas fixas", "Débito automático"],
+      [currentMonth, 6, "Internet Fibra 500MB", -119.9, "Contas fixas", "Cartão de crédito"],
+      [currentMonth, 7, "Energia Elétrica", -186.4, "Contas fixas", "Boleto"],
+      [currentMonth, 7, "Celular Plano Controle", -48.99, "Contas fixas", "Cartão de crédito"],
+      [currentMonth, 8, "Supermercado Pão de Açúcar", -342.8, "Mercado", "Cartão de débito"],
+      [currentMonth, 12, "Atacadão Compras do Mês", -212.5, "Mercado", "Cartão de débito"],
+      [currentMonth, 8, "Uber Viagem", -36.7, "Transporte", "Cartão de crédito"],
+      [currentMonth, 11, "Uber", -28.4, "Transporte", "Cartão de crédito"],
+      [currentMonth, 15, "Posto Ipiranga Combustível", -180, "Transporte", "Cartão de crédito"],
+      [currentMonth, 9, "iFood Restaurante", -78.5, "Alimentação", "Cartão de crédito"],
+      [currentMonth, 13, "iFood Lanches", -64.9, "Alimentação", "Cartão de crédito"],
+      [currentMonth, 18, "Restaurante Faculdade", -95.3, "Alimentação", "Cartão de crédito"],
+      [currentMonth, 21, "Padaria Café", -42.2, "Alimentação", "Cartão de débito"],
+      [currentMonth, 10, "Spotify Premium", -21.9, "Assinaturas", "Cartão de crédito"],
+      [currentMonth, 11, "Netflix", -39.9, "Assinaturas", "Cartão de crédito"],
+      [currentMonth, 18, "Disney Plus", -33.9, "Assinaturas", "Cartão de crédito"],
+      [currentMonth, 12, "Cinema Shopping Center", -86, "Lazer", "Cartão de crédito"],
+      [currentMonth, 19, "Passeio Parque", -55, "Lazer", "PIX"],
+      [currentMonth, 13, "Faculdade Mensalidade", -614.42, "Educação", "Boleto"],
+      [currentMonth, 16, "Curso Online Finanças", -79.9, "Educação", "Cartão de crédito"],
+      [currentMonth, 14, "Compra Mercado Livre", -248.9, "Compras", "Cartão de crédito"],
+      [currentMonth, 20, "Shopping Roupas", -192.97, "Compras", "Cartão de crédito"],
+      [currentMonth, 15, "Farmácia Drogasil", -64.25, "Saúde", "Cartão de débito"],
+      [currentMonth, 22, "Seguro da Moto", -145.22, "Transporte", "Boleto"],
+    ];
+    for (const item of demoTransactions) insertDemoTransaction(insertTransaction, userId, ...item);
+
+    const insertGoal = db.prepare(`
+      INSERT INTO financial_goals (
+        user_id, goal_name, objective, target_value, initial_saved_amount,
+        saved_amount, planned_monthly_savings, target_months, intensity, priority, is_primary
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const tripGoalId = insertGoal.run(userId, "Viagem dos sonhos", "viagem", 12000, 900, 1450, 0, 10, "equilibrado", 1, 1).lastInsertRowid;
+    const notebookGoalId = insertGoal.run(userId, "Notebook para o TCC", "compra", 4500, 1200, 1550, 0, 6, "leve", 2, 0).lastInsertRowid;
+
+    const insertGoalTransaction = db.prepare(`
+      INSERT INTO transactions (
+        user_id, description, value, date, category, type,
+        classification_confidence, classification_source, payment_method,
+        transaction_status, source
+      ) VALUES (?, ?, ?, ?, 'Metas', 'saida', 'alta', 'demo tcc', 'Reserva mensal', 'Concluida', 'meta')
+    `);
+    const insertContribution = db.prepare(`
+      INSERT INTO goal_contributions (user_id, goal_id, transaction_id, amount, contribution_date, note)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const contributions = [
+      [tripGoalId, "Viagem dos sonhos", 250, demoDate(previousMonth, 26), "Aporte inicial organizado após fechar o mês"],
+      [tripGoalId, "Viagem dos sonhos", 300, demoDate(currentMonth, 20), "Aporte de julho para a viagem"],
+      [notebookGoalId, "Notebook para o TCC", 350, demoDate(currentMonth, 21), "Separado para equipamento do projeto"],
+    ];
+    for (const [goalId, goalName, amount, date, note] of contributions) {
+      const transactionId = insertGoalTransaction.run(userId, `Aporte para meta - ${goalName}`, -amount, date).lastInsertRowid;
+      insertContribution.run(userId, goalId, transactionId, amount, date, note);
+    }
+
+    const insertRule = db.prepare("INSERT INTO category_rules (user_id, merchant_pattern, category) VALUES (?, ?, ?)");
+    [
+      ["spotify premium", "Assinaturas"],
+      ["netflix", "Assinaturas"],
+      ["disney plus", "Assinaturas"],
+      ["ifood", "Alimentação"],
+      ["uber", "Transporte"],
+      ["mercado livre", "Compras"],
+      ["faculdade mensalidade", "Educação"],
+      ["atacadao", "Mercado"],
+    ].forEach(([pattern, category]) => insertRule.run(userId, pattern, category));
+
+    recordGoalHistory(userId, tripGoalId, "GOAL_CREATED", null, { goal_name: "Viagem dos sonhos", target_value: 12000, target_months: 10 });
+    recordGoalHistory(userId, notebookGoalId, "GOAL_CREATED", null, { goal_name: "Notebook para o TCC", target_value: 4500, target_months: 6 });
+    recordGoalHistory(userId, tripGoalId, "GOAL_CONTRIBUTION_CREATED", null, { amount: 300, contribution_date: demoDate(currentMonth, 20) });
+    recordGoalHistory(userId, notebookGoalId, "GOAL_CONTRIBUTION_CREATED", null, { amount: 350, contribution_date: demoDate(currentMonth, 21) });
+
+    const allTransactions = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(userId);
+    const goals = getUserGoals(userId);
+    const previousSnapshot = buildFinancialAnalysis(allTransactions, goals[0] || null, getCategoryBudgets(userId, previousMonth), { month: previousMonth });
+    db.prepare("INSERT INTO monthly_closings (user_id, month, snapshot_json) VALUES (?, ?, ?)")
+      .run(userId, previousMonth, JSON.stringify(previousSnapshot));
+
+    db.prepare(`
+      INSERT INTO ai_analysis_history (user_id, month, source, model, summary, request_json, response_json, is_official)
+      VALUES (?, ?, 'local', 'demo-tcc', ?, ?, ?, 1)
+    `).run(
+      userId,
+      currentMonth,
+      "Entrou R$ 5.000,00, saiu um valor concentrado em contas fixas, educação e metas. O plano principal é reduzir alimentação fora e compras para reforçar a viagem sem comprometer despesas essenciais.",
+      JSON.stringify({ origem: "Demonstração TCC", mes: currentMonth, observacao: "Dados fictícios preparados para apresentação acadêmica." }),
+      JSON.stringify({
+        executiveSummary: "Saldo positivo no mês, mas gastos variáveis ainda pressionam a meta. Reduzir alimentação fora e compras aumenta a chance de manter o aporte da viagem.",
+        nextActions: [
+          "Separar o aporte da meta no início do mês.",
+          "Reduzir delivery em 20% neste ciclo.",
+          "Revisar assinaturas antes do próximo fechamento.",
+        ],
+      }),
+    );
+
+    audit(userId, "DEMO_ACCOUNT_READY", { message: "Conta de demonstração TCC recriada com dados fictícios.", month: currentMonth }, req);
+    audit(userId, "CONSENT_ACCEPTED", { termVersion: "1.0", demo: true }, req);
+    audit(userId, "IMPORT_CONFIRMED", { source: "Demonstração TCC", transactions: demoTransactions.length + contributions.length }, req);
+    audit(userId, "AI_ANALYSIS_OFFICIAL_SAVED", { month: currentMonth, source: "local" }, req);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function categoryExists(userId, name) {
@@ -2577,9 +2792,21 @@ async function handleApi(req, res) {
       if (!user || !(await bcrypt.compare(String(body.password || ""), user.password_hash))) {
         return send(res, 401, { error: "E-mail ou senha inválidos. Confira os dados ou crie uma nova conta." });
       }
+      if (user.is_demo) seedDemoAccount(user.id, req);
       ensureDefaultCategories(user.id);
       audit(user.id, "USER_LOGIN", null, req);
       return send(res, 200, { ok: true }, { "Set-Cookie": cookieHeader(createSession(user.id), req) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/demo/login") {
+      const user = ensureDemoAccount(req);
+      audit(user.id, "DEMO_LOGIN", { message: "Acesso iniciado pela conta de demonstração TCC." }, req);
+      return send(res, 200, {
+        ok: true,
+        demo: true,
+        email: DEMO_ACCOUNT.email,
+        password: DEMO_ACCOUNT.password,
+      }, { "Set-Cookie": cookieHeader(createSession(user.id), req) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/logout") {

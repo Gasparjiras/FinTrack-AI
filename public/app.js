@@ -69,6 +69,7 @@ const passwordInput = document.querySelector("#passwordInput");
 const confirmPasswordInput = document.querySelector("#confirmPasswordInput");
 const passwordBar = document.querySelector("#passwordBar");
 const registerButton = document.querySelector("#registerButton");
+const demoLoginBtn = document.querySelector("#demoLoginBtn");
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const compactCurrency = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
 const themeColors = {
@@ -266,9 +267,26 @@ async function handleLogin(event) {
 
 loginForm.addEventListener("submit", handleLogin);
 
+demoLoginBtn?.addEventListener("click", async () => {
+  const original = demoLoginBtn.innerHTML;
+  demoLoginBtn.disabled = true;
+  demoLoginBtn.textContent = "Carregando demo...";
+  try {
+    await api("/api/demo/login", { method: "POST" });
+    await boot({ keepLoginOnError: true });
+    toast("Demonstração TCC carregada com dados fictícios.");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    demoLoginBtn.disabled = false;
+    demoLoginBtn.innerHTML = original;
+    refreshIcons();
+  }
+});
+
 document.querySelector("#logoutBtn").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" });
-  document.body.classList.remove("dashboard-active", "consent-inactive");
+  document.body.classList.remove("dashboard-active", "consent-inactive", "demo-active");
   setHidden(appPanel, true);
   setHidden(authPanel, false);
 });
@@ -3141,6 +3159,13 @@ async function boot(options = {}) {
   try {
     const me = await api("/api/me");
     document.querySelector("#welcome").textContent = `Olá, ${me.user.name}`;
+    document.body.classList.toggle("demo-active", Boolean(me.user.is_demo));
+    const statusPill = document.querySelector(".status-pill");
+    if (statusPill) {
+      statusPill.innerHTML = me.user.is_demo
+        ? `<i data-lucide="presentation"></i> Demonstração TCC`
+        : `<i data-lucide="shield-check"></i> Dados protegidos`;
+    }
     const firstName = String(me.user.name || "Usuário").trim().split(/\s+/)[0] || "Usuário";
     const initials = String(me.user.name || "U").trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
     document.querySelector("#sidebarUserName").textContent = firstName;
