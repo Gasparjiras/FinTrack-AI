@@ -9076,3 +9076,582 @@ table,
     display: none;
   }
 }
+
+/* Final premium standardization: consistent type, cards, charts and responsive grids. */
+body.dashboard-active {
+  --ft-ink: #0E1F1B;
+  --ft-paper: #F7F5F0;
+  --ft-card: #FFFDF8;
+  --ft-card-soft: #FBFAF6;
+  --ft-line: rgba(14, 31, 27, .12);
+  --ft-line-strong: rgba(14, 31, 27, .18);
+  --ft-text: #111A17;
+  --ft-muted: #65716B;
+  --ft-muted-2: #87908A;
+  --ft-emerald: #1F8A5F;
+  --ft-ai: #6C63FF;
+  --ft-attention: #E08A3C;
+  --ft-critical: #C0392B;
+  --ft-radius: 22px;
+  --ft-radius-sm: 14px;
+  --ft-shadow: 0 18px 46px rgba(29, 23, 12, .075);
+  --ft-shadow-hover: 0 24px 62px rgba(29, 23, 12, .11);
+  --ft-sans: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  --ft-mono: "Cascadia Mono", "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+  background: var(--ft-paper) !important;
+  color: var(--ft-text);
+  font-family: var(--ft-sans);
+}
+
+.dashboard-active *,
+.dashboard-active *::before,
+.dashboard-active *::after {
+  letter-spacing: 0 !important;
+}
+
+.dashboard-active .workspace-content {
+  width: 100%;
+  max-width: 1540px;
+  margin: 0 auto;
+}
+
+.dashboard-active .workspace-header {
+  background: rgba(247, 245, 240, .94) !important;
+}
+
+.dashboard-active .sidebar {
+  background: var(--ft-ink) !important;
+}
+
+.dashboard-active .assistant-hub,
+.dashboard-active .page-command-card,
+.dashboard-active .ai-hero-panel {
+  border: 1px solid rgba(247, 245, 240, .10) !important;
+  background: var(--ft-ink) !important;
+  box-shadow: 0 20px 54px rgba(14, 31, 27, .18) !important;
+}
+
+.dashboard-active .assistant-hub::after,
+.dashboard-active .page-command-card::after {
+  display: none !important;
+}
+
+.dashboard-active .assistant-hub button,
+.dashboard-active .ai-hero-panel button.secondary,
+.dashboard-active .ai-hero-panel .ai-mode-select select {
+  border: 1px solid rgba(247, 245, 240, .16) !important;
+}
+
+.dashboard-active .panel,
+.dashboard-active .chart-panel,
+.dashboard-active .kpi-card,
+.dashboard-active .form-panel,
+.dashboard-active .table-panel,
+.dashboard-active .import-panel,
+.dashboard-active .category-card,
+.dashboard-active .goal-item-card,
+.dashboard-active .page-intro,
+.dashboard-active .goal-select-card,
+.dashboard-active .goal-contribution-card,
+.dashboard-active .goal-overview {
+  border: 1px solid var(--ft-line) !important;
+  border-radius: var(--ft-radius) !important;
+  background: var(--ft-card) !important;
+  box-shadow: var(--ft-shadow) !important;
+}
+
+.dashboard-active .panel:hover,
+.dashboard-active .chart-panel:hover,
+.dashboard-active .category-card:hover,
+.dashboard-active .goal-item-card:hover {
+  box-shadow: var(--ft-shadow-hover) !important;
+}
+
+.dashboard-active .panel-head,
+.dashboard-active .chart-title {
+  min-height: 58px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ft-line);
+}
+
+.dashboard-active .panel-head h3,
+.dashboard-active .chart-title h3,
+.dashboard-active .category-card h3,
+.dashboard-active .goal-item-card strong {
+  color: var(--ft-text) !important;
+  font-size: 17px !important;
+  font-weight: 850 !important;
+}
+
+.dashboard-active .panel-head p,
+.dashboard-active .chart-panel p,
+.dashboard-active .page-intro p,
+.dashboard-active .category-card p,
+.dashboard-active .goal-item-card small {
+  color: var(--ft-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.45;
+}
+
+.dashboard-active .kpi-grid,
+.dashboard-active .dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr)) !important;
+  gap: clamp(14px, 1.4vw, 20px) !important;
+}
+
+.dashboard-active .kpi-card {
+  min-height: 142px !important;
+  padding: 22px !important;
+  align-content: space-between;
+}
+
+.dashboard-active .kpi-card::after {
+  display: none !important;
+}
+
+.dashboard-active .kpi-card strong,
+.dashboard-active .goal-summary strong,
+.dashboard-active .goal-dashboard-grid strong,
+.dashboard-active .score-ring strong,
+.dashboard-active .ranking-row b,
+.dashboard-active .budget-suggestion-table span,
+.dashboard-active .budget-suggestion-table b,
+.dashboard-active .openai-status-grid strong {
+  font-family: var(--ft-mono) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-active .kpi-card strong {
+  font-size: clamp(25px, 2.2vw, 34px) !important;
+  font-weight: 800 !important;
+}
+
+.dashboard-active .kpi-icon,
+.dashboard-active .panel-icon,
+.dashboard-active .recent-icon,
+.dashboard-active .goal-item-icon,
+.dashboard-active .category-card-icon,
+.dashboard-active .command-icon,
+.dashboard-active .assistant-avatar {
+  border-radius: 16px !important;
+}
+
+.dashboard-active .finance-board {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(320px, .85fr) !important;
+  gap: 20px !important;
+  align-items: stretch;
+}
+
+.dashboard-active .finance-board .budget-board {
+  grid-column: 1 / -1 !important;
+}
+
+.dashboard-active .dashboard-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+}
+
+.dashboard-active .dashboard-secondary-grid > .panel {
+  grid-column: span 4;
+  min-width: 0;
+}
+
+.dashboard-active .dashboard-secondary-grid > .main-goal-card,
+.dashboard-active .dashboard-secondary-grid > .recent-panel {
+  grid-column: span 6;
+}
+
+.dashboard-active .dashboard-extra-metrics {
+  display: grid !important;
+  grid-column: 1 / -1 !important;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  order: 5;
+}
+
+.dashboard-active .chart-wrap {
+  position: relative;
+  width: 100%;
+  height: clamp(280px, 25vw, 355px) !important;
+  min-height: 280px !important;
+}
+
+.dashboard-active .finance-chart-card .dashboard-chart {
+  height: clamp(300px, 28vw, 370px) !important;
+}
+
+.dashboard-active .category-chart-card .dashboard-chart {
+  height: clamp(260px, 23vw, 325px) !important;
+}
+
+.dashboard-active .chart-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.dashboard-active .chart-empty-state,
+.dashboard-active .empty-compact,
+.dashboard-active .empty-state {
+  border-color: rgba(14, 31, 27, .16) !important;
+  background: var(--ft-card-soft) !important;
+  color: var(--ft-muted) !important;
+}
+
+.dashboard-active .ranking-row,
+.dashboard-active .recent-item,
+.dashboard-active .budget-row,
+.dashboard-active .recurring-row,
+.dashboard-active .closing-row,
+.dashboard-active .timeline-row,
+.dashboard-active .goal-contribution-row,
+.dashboard-active .rule-row {
+  border: 1px solid var(--ft-line) !important;
+  border-radius: 16px !important;
+  background: var(--ft-card-soft) !important;
+}
+
+.dashboard-active .budget-row {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-active .budget-label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.dashboard-active .budget-label b {
+  font-family: var(--ft-mono);
+  font-weight: 800;
+}
+
+.dashboard-active .budget-track-dual {
+  height: 8px !important;
+  border-radius: 999px;
+  background: #E8E2D8 !important;
+}
+
+.dashboard-active .budget-track-dual .suggested-bar {
+  height: 2px !important;
+  top: 3px !important;
+  background: #BEB7AA !important;
+}
+
+.dashboard-active .budget-track-dual .actual-bar {
+  height: 8px !important;
+}
+
+.dashboard-active .budget-row.status-atencao {
+  border-color: rgba(224, 138, 60, .30) !important;
+}
+
+.dashboard-active .budget-row.status-critico {
+  border-color: rgba(192, 57, 43, .28) !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .report-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel {
+  grid-column: span 6 !important;
+  min-height: 400px !important;
+  padding: 24px !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(1),
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(3) {
+  grid-column: span 7 !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(2),
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(4) {
+  grid-column: span 5 !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(5),
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(6),
+.dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(7) {
+  grid-column: span 4 !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .chart-wrap {
+  height: 300px !important;
+  min-height: 300px !important;
+}
+
+.dashboard-active .app-view[data-page="relatorios"] .ranking-panel {
+  min-height: 400px !important;
+}
+
+.dashboard-active .app-view[data-page="metas"] > .content-grid,
+.dashboard-active .app-view[data-page="gastos"] .content-grid,
+.dashboard-active .category-layout,
+.dashboard-active .app-view[data-page="configuracoes"] > .content-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, .78fr) minmax(0, 1.22fr) !important;
+  gap: 22px !important;
+  align-items: start;
+}
+
+.dashboard-active .app-view[data-page="gastos"] .content-grid {
+  grid-template-columns: minmax(340px, .9fr) minmax(280px, .65fr) minmax(280px, .65fr) !important;
+}
+
+.dashboard-active .goal-summary,
+.dashboard-active .goal-dashboard {
+  align-items: center;
+}
+
+.dashboard-active .goal-progress-ring {
+  width: 112px !important;
+  height: 112px !important;
+  grid-template-rows: auto auto;
+  gap: 4px;
+}
+
+.dashboard-active .goal-summary .goal-progress-ring.large {
+  width: 156px !important;
+  height: 156px !important;
+}
+
+.dashboard-active .goal-progress-ring::after {
+  display: none !important;
+}
+
+.dashboard-active .goal-progress-ring strong {
+  font-family: var(--ft-mono) !important;
+  font-size: 25px !important;
+  font-weight: 800 !important;
+}
+
+.dashboard-active .goal-progress-ring.large strong {
+  font-size: 34px !important;
+}
+
+.dashboard-active .goal-progress-ring span {
+  display: block !important;
+  position: relative;
+  z-index: 1;
+  color: var(--ft-muted) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+}
+
+.dashboard-active .goal-summary {
+  display: grid;
+  grid-template-columns: 170px repeat(2, minmax(165px, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.dashboard-active .goal-summary > div:not(.goal-progress-ring),
+.dashboard-active .goal-dashboard-grid div,
+.dashboard-active .goal-live-preview span,
+.dashboard-active .economy-mode,
+.dashboard-active .goal-item-grid div {
+  border: 1px solid var(--ft-line) !important;
+  border-radius: 16px !important;
+  background: var(--ft-card-soft) !important;
+}
+
+.dashboard-active .category-grid,
+.dashboard-active .goals-list,
+.dashboard-active .goal-side-stack {
+  gap: 16px !important;
+}
+
+.dashboard-active .category-card-head,
+.dashboard-active .goal-item-head {
+  align-items: flex-start !important;
+}
+
+.dashboard-active .category-card .progress-track,
+.dashboard-active .goal-mini-progress {
+  height: 9px !important;
+  border-radius: 999px !important;
+  background: #E8E2D8 !important;
+}
+
+.dashboard-active .app-view[data-page="ia"] .ai-report {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 22px !important;
+}
+
+.dashboard-active .consultant-card {
+  border: 1px solid rgba(108, 99, 255, .20) !important;
+  border-left: 5px solid var(--ft-ai) !important;
+  border-radius: 20px !important;
+  background: #FFFFFF !important;
+}
+
+.dashboard-active .ai-section {
+  border: 1px solid var(--ft-line) !important;
+  border-radius: 20px !important;
+  background: var(--ft-card) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-active .compact-alerts,
+.dashboard-active .compact-recommendations {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+}
+
+.dashboard-active .ai-alert,
+.dashboard-active .recommendation-card {
+  border: 1px solid var(--ft-line) !important;
+  border-radius: 16px !important;
+  background: var(--ft-card-soft) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-active .ai-alert.critico,
+.dashboard-active .ai-alert.critical {
+  border-color: rgba(192, 57, 43, .26) !important;
+  background: rgba(192, 57, 43, .045) !important;
+}
+
+.dashboard-active .ai-alert.atencao,
+.dashboard-active .ai-alert.warning,
+.dashboard-active .recommendation-card {
+  border-color: rgba(224, 138, 60, .24) !important;
+  background: rgba(224, 138, 60, .040) !important;
+}
+
+.dashboard-active .classification-summary-card {
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+}
+
+.dashboard-active .classification-summary-card div,
+.dashboard-active .budget-suggestion-table article,
+.dashboard-active .payload-grid div,
+.dashboard-active .payload-list,
+.dashboard-active .openai-status-grid div {
+  border: 1px solid var(--ft-line) !important;
+  background: var(--ft-card-soft) !important;
+  border-radius: 16px !important;
+}
+
+.dashboard-active .table-wrap {
+  border-color: var(--ft-line) !important;
+}
+
+.dashboard-active th {
+  background: #F0ECE3 !important;
+}
+
+.dashboard-active input,
+.dashboard-active select,
+.dashboard-active textarea {
+  border-color: var(--ft-line-strong) !important;
+  background: #FFFFFF !important;
+}
+
+.dashboard-active button:not(.nav-item):not(.month-nav):not(.icon-button):not(.secondary):not(.ghost-button),
+.dashboard-active .actions button[type="submit"],
+.dashboard-active #quickExpenseBtn,
+.dashboard-active #analyzeBtn {
+  background: var(--ft-emerald) !important;
+  color: #FFFFFF !important;
+}
+
+.dashboard-active .secondary,
+.dashboard-active .ghost-button,
+.dashboard-active .icon-button {
+  border: 1px solid var(--ft-line) !important;
+  background: #FFFFFF !important;
+  color: var(--ft-text) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-active .secondary:hover,
+.dashboard-active .ghost-button:hover,
+.dashboard-active .icon-button:hover {
+  border-color: rgba(31, 138, 95, .30) !important;
+  background: rgba(31, 138, 95, .06) !important;
+  color: var(--ft-emerald) !important;
+}
+
+@media (max-width: 1320px) {
+  .dashboard-active .kpi-grid,
+  .dashboard-active .dashboard-kpis {
+    grid-template-columns: repeat(2, minmax(220px, 1fr)) !important;
+  }
+
+  .dashboard-active .finance-board,
+  .dashboard-active .app-view[data-page="metas"] > .content-grid,
+  .dashboard-active .app-view[data-page="gastos"] .content-grid,
+  .dashboard-active .category-layout,
+  .dashboard-active .app-view[data-page="configuracoes"] > .content-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-active .dashboard-secondary-grid > .panel,
+  .dashboard-active .dashboard-secondary-grid > .main-goal-card,
+  .dashboard-active .dashboard-secondary-grid > .recent-panel {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 980px) {
+  .dashboard-active .dashboard-secondary-grid,
+  .dashboard-active .app-view[data-page="relatorios"] .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-active .dashboard-secondary-grid > .panel,
+  .dashboard-active .dashboard-secondary-grid > .main-goal-card,
+  .dashboard-active .dashboard-secondary-grid > .recent-panel,
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel,
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(1),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(2),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(3),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(4),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(5),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(6),
+  .dashboard-active .app-view[data-page="relatorios"] .chart-panel:nth-child(7) {
+    grid-column: 1 / -1 !important;
+  }
+
+  .dashboard-active .goal-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .dashboard-active .goal-summary .goal-progress-ring.large {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .dashboard-active .workspace {
+    padding: 16px 12px 36px !important;
+  }
+
+  .dashboard-active .kpi-grid,
+  .dashboard-active .dashboard-kpis,
+  .dashboard-active .goal-summary,
+  .dashboard-active .classification-summary-card,
+  .dashboard-active .budget-suggestion-table article {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-active .chart-wrap,
+  .dashboard-active .finance-chart-card .dashboard-chart,
+  .dashboard-active .category-chart-card .dashboard-chart,
+  .dashboard-active .app-view[data-page="relatorios"] .chart-wrap {
+    height: 270px !important;
+    min-height: 270px !important;
+  }
+
+  .dashboard-active .compact-alerts,
+  .dashboard-active .compact-recommendations {
+    grid-template-columns: 1fr !important;
+  }
+}

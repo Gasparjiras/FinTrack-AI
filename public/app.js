@@ -81,6 +81,20 @@ const themeColors = {
   muted: "#D8D6CF",
 };
 const categoryPalette = ["#1F8A5F", "#E08A3C", "#B66A55", "#5F7486", "#2F5D50"];
+const categoryColorMap = {
+  alimentacao: "#B66A55",
+  assinaturas: "#6C63FF",
+  compras: "#1F8A5F",
+  "contas fixas": "#5F7486",
+  educacao: "#607487",
+  lazer: "#E08A3C",
+  mercado: "#2F5D50",
+  metas: "#1F8A5F",
+  outros: "#8A8178",
+  receita: "#1F8A5F",
+  saude: "#C46A6A",
+  transporte: "#3F77A8",
+};
 
 let transactions = [];
 let categories = [];
@@ -111,6 +125,7 @@ let selectedAnalysisMonth = currentMonthValue();
 const transactionPageSize = 8;
 const charts = {};
 const chartFontFamily = "Inter, Segoe UI, system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+const chartNumberFontFamily = "\"Cascadia Mono\", \"JetBrains Mono\", \"IBM Plex Mono\", Consolas, monospace";
 
 const premiumCenterTextPlugin = {
   id: "premiumCenterText",
@@ -124,10 +139,10 @@ const premiumCenterTextPlugin = {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = options.labelColor || "#6F766F";
-    ctx.font = `700 12px ${chartFontFamily}`;
+    ctx.font = `750 11px ${chartFontFamily}`;
     ctx.fillText(options.label || "Total", x, y - 12);
     ctx.fillStyle = options.valueColor || "#111A17";
-    ctx.font = `800 ${options.valueSize || 17}px ${chartFontFamily}`;
+    ctx.font = `800 ${options.valueSize || 17}px ${chartNumberFontFamily}`;
     ctx.fillText(options.value, x, y + 12);
     ctx.restore();
   },
@@ -1441,7 +1456,7 @@ function renderDashboardGoalCard() {
   const goal = analysis.goal;
   container.className = "goal-dashboard";
   container.innerHTML = `
-    <div class="goal-progress-ring" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong></div>
+    <div class="goal-progress-ring" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong><span>da meta</span></div>
     <div class="goal-dashboard-info">
       <span class="status-chip ${goalStatusClass(goal.status)}">${escapeHtml(goal.status)}</span>
       <h4>${escapeHtml(goal.goal_name || objectiveLabel(goal.objective))}</h4>
@@ -1937,7 +1952,7 @@ function renderGoalSummary() {
   container.className = "goal-summary";
   const goal = analysis.goal;
   container.innerHTML = `
-    <div class="goal-progress-ring large" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong></div>
+    <div class="goal-progress-ring large" role="img" aria-label="${goal.progressPercentage}% da meta concluída" style="--progress:${goal.progressPercentage * 3.6}deg"><strong>${goal.progressPercentage}%</strong><span>da meta</span></div>
     <div><span>Meta</span><strong>${escapeHtml(goal.goal_name || objectiveLabel(goal.objective))}</strong></div>
     <div><span>Objetivo</span><strong>${escapeHtml(objectiveLabel(goal.objective))}</strong></div>
     <div><span>Valor total</span><strong>${currency.format(goal.target_value)}</strong></div>
@@ -2064,21 +2079,21 @@ function renderCategoryChart(key, canvasId, compact) {
         data: items.map((item) => item.total),
         backgroundColor: items.map((item) => categoryColor(item.category)),
         borderColor: dark ? "#292928" : "#FBFAF6",
-        borderWidth: compact ? 5 : 4,
-        borderRadius: compact ? 8 : 7,
-        spacing: 2,
-        hoverOffset: 7,
+        borderWidth: compact ? 7 : 6,
+        borderRadius: compact ? 10 : 9,
+        spacing: 3,
+        hoverOffset: 9,
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: compact ? "72%" : "68%",
-      radius: compact ? "88%" : "86%",
-      layout: { padding: compact ? 4 : 10 },
+      cutout: compact ? "74%" : "70%",
+      radius: compact ? "84%" : "82%",
+      layout: { padding: compact ? 10 : 14 },
       plugins: {
         legend: { display: false },
-        premiumCenterText: { label: "Total do mês", value: chartCenterMoney(total), valueSize: compact ? 17 : 19 },
+        premiumCenterText: { label: "Total do mês", value: chartCenterMoney(total), valueSize: compact ? 16 : 19 },
         tooltip: {
           ...premiumTooltip(),
           callbacks: {
@@ -2174,7 +2189,7 @@ function renderMonthlyChart(key, canvasId) {
   createChart(key, canvasId, {
     type: "line",
     data: {
-      labels: items.map((item) => item.month),
+      labels: items.map((item) => monthShortLabel(item.month)),
       datasets: [
         { label: "Entradas", data: items.map((item) => item.income), borderColor: themeColors.emerald, backgroundColor: "rgba(31,138,95,.12)", fill: true, tension: .42, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: "#FFFFFF", pointBorderWidth: 2 },
         { label: "Saídas", data: items.map((item) => item.expenses), borderColor: themeColors.critical, backgroundColor: "rgba(192,57,43,.08)", fill: true, tension: .42, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: "#FFFFFF", pointBorderWidth: 2 },
@@ -2220,7 +2235,7 @@ function renderGoalChart(key, canvasId) {
       layout: { padding: 12 },
       plugins: {
         legend: { display: false },
-        premiumCenterText: { label: "Concluído", value: `${progress}%`, valueSize: 24 },
+        premiumCenterText: { label: "da meta", value: `${progress}%`, valueSize: 26 },
         tooltip: premiumTooltip(),
       },
     },
@@ -2263,7 +2278,7 @@ function renderBudgetComparisonChart() {
         { label: "Gasto real", data: items.map((item) => item.currentMonthly), backgroundColor: items.map((item) => budgetStatusColor(budgetStatusFromSuggestion(item))), borderRadius: 999, borderSkipped: false, maxBarThickness: 18 },
       ],
     },
-    options: { ...chartOptions({ tooltipLabel: "Valor" }), plugins: { ...chartOptions().plugins, legend: premiumLegend(false) } },
+    options: { ...chartOptions({ indexAxis: "y", tooltipLabel: "Valor" }), indexAxis: "y", plugins: { ...chartOptions({ indexAxis: "y" }).plugins, legend: premiumLegend(false) } },
   });
 }
 
@@ -2280,12 +2295,14 @@ function renderSavingsChart() {
       labels: items.map((item) => item.category),
       datasets: [{ label: "Economia mensal", data: items.map((item) => item.potentialMonthlySavings), backgroundColor: themeColors.emerald, borderRadius: 999, borderSkipped: false, maxBarThickness: 54 }],
     },
-    options: chartOptions({ tooltipLabel: "Economia mensal" }),
+    options: { ...chartOptions({ indexAxis: "y", tooltipLabel: "Economia mensal" }), indexAxis: "y" },
   });
 }
 
 function chartOptions(settings = "light") {
-  const theme = typeof settings === "string" ? settings : settings.theme || "light";
+  const opts = typeof settings === "string" ? { theme: settings } : settings;
+  const theme = opts.theme || "light";
+  const horizontal = opts.indexAxis === "y";
   const dark = theme === "dark";
   const tickColor = dark ? "#aaa9a4" : "#64716c";
   const gridColor = dark ? "rgba(255,255,255,.18)" : "rgba(14,31,27,.08)";
@@ -2298,13 +2315,56 @@ function chartOptions(settings = "light") {
       tooltip: {
         ...premiumTooltip(),
         callbacks: {
-          label: (context) => `${context.dataset.label || settings.tooltipLabel || "Valor"}: ${currency.format(Number(context.raw || 0))}`,
+          label: (context) => `${context.dataset.label || opts.tooltipLabel || "Valor"}: ${currency.format(Number(context.raw || 0))}`,
         },
       },
     },
     scales: {
-      y: { beginAtZero: true, border: { display: false }, grid: { color: gridColor, drawTicks: false }, ticks: { color: tickColor, padding: 10, font: { family: chartFontFamily, size: 11, weight: 650 }, callback: (value) => compactMoney(Number(value)) } },
-      x: { border: { display: false }, grid: { display: false }, ticks: { color: tickColor, maxRotation: 0, autoSkip: true, font: { family: chartFontFamily, size: 11, weight: 650 } } },
+      y: horizontal ? {
+        border: { display: false },
+        grid: { display: false },
+        ticks: {
+          color: tickColor,
+          padding: 8,
+          font: { family: chartFontFamily, size: 11, weight: 650 },
+        },
+      } : {
+        beginAtZero: true,
+        border: { display: false },
+        grid: { color: gridColor, drawTicks: false },
+        grace: "14%",
+        ticks: {
+          color: tickColor,
+          padding: 10,
+          maxTicksLimit: 6,
+          font: { family: chartFontFamily, size: 11, weight: 650 },
+          callback: (value) => compactMoney(Number(value)),
+        },
+      },
+      x: horizontal ? {
+        beginAtZero: true,
+        border: { display: false },
+        grid: { color: gridColor, drawTicks: false },
+        grace: "10%",
+        ticks: {
+          color: tickColor,
+          padding: 8,
+          maxTicksLimit: 5,
+          font: { family: chartFontFamily, size: 11, weight: 650 },
+          callback: (value) => compactMoney(Number(value)),
+        },
+      } : {
+        border: { display: false },
+        grid: { display: false },
+        ticks: {
+          color: tickColor,
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 6,
+          padding: 8,
+          font: { family: chartFontFamily, size: 11, weight: 650 },
+        },
+      },
     },
   };
 }
@@ -2349,6 +2409,8 @@ function isDarkDashboardChart(canvasId) {
 
 function categoryColor(name) {
   const normalized = String(name || "Outros");
+  const key = normalizeText(normalized);
+  if (categoryColorMap[key]) return categoryColorMap[key];
   let hash = 0;
   for (const char of normalized) hash = ((hash << 5) - hash) + char.charCodeAt(0);
   return categoryPalette[Math.abs(hash) % categoryPalette.length];
@@ -3025,6 +3087,13 @@ function monthLabel(value) {
   if (!year || !month) return value;
   const date = new Date(Number(year), Number(month) - 1, 1);
   return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(date);
+}
+
+function monthShortLabel(value) {
+  const [year, month] = String(value).split("-");
+  if (!year || !month) return value;
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  return new Intl.DateTimeFormat("pt-BR", { month: "short" }).format(date).replace(".", "");
 }
 
 function currentMonthValue(date = new Date()) {
