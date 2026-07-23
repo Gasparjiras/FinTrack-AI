@@ -2,7 +2,7 @@
 
 ## 1. Visao Geral
 
-O FinTrack AI e um aplicativo web local de educacao financeira e gestao de gastos. Ele foi desenvolvido para apresentacao academica/TCC e demonstra cadastro de transacoes, importacao de extratos, categorizacao, metas, dashboard, graficos, auditoria, LGPD e analise com IA.
+O FinTrack AI e um aplicativo web local de educacao financeira e gestao de gastos. Ele organiza transacoes, importa extratos, categoriza gastos, acompanha metas, gera dashboards, relatorios, auditoria, controles LGPD e analise com IA.
 
 A versao atual nao usa dados ficticios para preencher telas. O sistema inicia limpo e so exibe informacoes financeiras depois que o usuario cadastra ou importa seus proprios dados.
 
@@ -229,7 +229,7 @@ Se `OPENAI_MODEL` nao estiver configurado, o backend avisa no terminal.
 
 1. Mostrar home e cadastro LGPD.
 2. Entrar no app com painel vazio.
-3. Importar um CSV/Excel preparado para a apresentacao.
+3. Importar um CSV/Excel preparado para teste ou uso real.
 4. Confirmar a previa.
 5. Mostrar dashboard, categorias e graficos.
 6. Criar uma meta.

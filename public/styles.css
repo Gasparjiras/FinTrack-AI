@@ -9011,6 +9011,50 @@ table,
   margin-top: 8px;
 }
 
+.dashboard-active .dashboard-extra-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.dashboard-active .goal-impact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-active .goal-impact-grid article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid rgba(14, 31, 27, 0.1);
+  border-radius: 16px;
+  padding: 14px;
+  background: #fffdf8;
+}
+
+.dashboard-active .goal-impact-icon {
+  width: 40px;
+  height: 40px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #1f8a5f;
+  background: rgba(31, 138, 95, 0.1);
+}
+
+.dashboard-active .goal-impact-grid strong {
+  display: block;
+  color: #0e1f1b;
+}
+
+.dashboard-active .goal-impact-grid p,
+.dashboard-active .goal-impact-grid small {
+  display: block;
+  margin: 4px 0 0;
+  color: #5e6964;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .dashboard-active .classification-summary-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));

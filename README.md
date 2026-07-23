@@ -1,6 +1,6 @@
 # FinTrack AI - Educacao Financeira com IA
 
-Aplicativo web local para TCC/TGI com foco em organizacao financeira, importacao de extratos, categorizacao de gastos, metas, graficos, LGPD, auditoria e analise assistida por IA.
+Aplicativo web local de organizacao financeira com importacao de extratos, categorizacao de gastos, metas, graficos, LGPD, auditoria e analise assistida por IA.
 
 ## Principio da Versao Atual
 
@@ -17,6 +17,7 @@ Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma tra
 
 - Home com identidade FinTrack AI, login/cadastro e consentimento LGPD.
 - Dashboard com 4 KPIs principais: saldo disponivel, gastos do mes, guardado para metas e progresso da meta.
+- Dashboard com gasto medio por dia, previsao de fechamento e quanto ainda pode gastar no periodo.
 - Cadastro manual de renda e gastos.
 - Sugestao automatica de categoria com regras locais e regras aprendidas.
 - Importacao de CSV, XLSX, XLS e PDF, com previa antes de salvar.
@@ -32,6 +33,7 @@ Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma tra
 - Metas financeiras com linha do tempo, meses restantes, esperado hoje, diferenca do plano e modos leve, equilibrado e agressivo.
 - Historico de aportes por meta, com agrupamento mensal e exclusao de aporte especifico.
 - Analise com IA/local com diagnostico, principais gastos, alertas, oportunidades de economia, plano da meta, plano de 7 dias e proximas acoes.
+- Impacto dos maiores gastos na meta, mostrando quanto um corte percentual liberaria para o aporte mensal.
 - Comparacao mensal automatica, mostrando evolucao entre o mes atual e o anterior.
 - Fechamento mensal, salvando um retrato do periodo sem apagar dados.
 - Deteccao de transacoes recorrentes como assinaturas e contas fixas.
@@ -43,14 +45,13 @@ Quando nao ha dados, o app exibe estados vazios profissionais, como "Nenhuma tra
 - Revogacao de consentimento LGPD com limpeza dos dados financeiros sem excluir a conta.
 - Exportacao dos dados do titular em JSON.
 - Exportacao de relatorio CSV e relatorio pronto para imprimir/salvar como PDF pelo navegador.
-- Modo apresentacao para banca, com dados reais quando existirem ou dados demonstrativos opcionais sem gravar no banco.
 - Exclusao completa da conta mediante senha.
 
-## Open Finance no TCC
+## Integracao Bancaria
 
-O Open Finance real exige autorizacao e supervisao do Banco Central para integracao direta. Por isso, esta versao academica nao acessa bancos reais. A validacao do sistema e feita por cadastro manual e importacao de extratos fornecidos pelo proprio usuario.
+O app nao acessa contas bancarias automaticamente. A analise financeira e feita com transacoes cadastradas manualmente ou extratos importados pelo proprio usuario.
 
-Essa decisao permite demonstrar as funcionalidades principais sem coletar dados bancarios reais automaticamente: categorizacao, dashboard, metas, graficos, auditoria, consentimento e recomendacoes personalizadas.
+Essa abordagem mantem o controle dos dados com o usuario e permite usar categorizacao, dashboard, metas, graficos, auditoria, consentimento e recomendacoes personalizadas sem integracao bancaria direta.
 
 ## LGPD e Seguranca
 
@@ -82,7 +83,7 @@ Se `OPENAI_API_KEY` existir mas `OPENAI_MODEL` estiver vazio, o backend mostra n
 OPENAI_MODEL nao configurado no .env.
 ```
 
-Use o limite diario (`OPENAI_DAILY_LIMIT`) para proteger custo durante testes e apresentacao do TCC.
+Use o limite diario (`OPENAI_DAILY_LIMIT`) para proteger custo durante testes e uso pessoal.
 
 ## Como Rodar
 
@@ -115,9 +116,9 @@ http://localhost:3000
 6. Abra o Dashboard para ver KPIs, recorrencias, score e graficos.
 7. Abra Analise com IA, escolha "Analise local" ou "OpenAI" e clique em "Analisar".
 8. Registre um aporte na meta, edite o aporte e veja o historico mensal na aba Metas.
-9. Abra Relatorios, feche o mes, veja a comparacao mensal e gere CSV, PDF ou modo apresentacao.
+9. Abra Relatorios, feche o mes, veja a comparacao mensal e gere CSV ou PDF.
 10. Abra Configuracoes para ver "Minha atividade", regras aprendidas e status da IA.
-11. Teste a revogacao de consentimento para demonstrar limpeza dos dados financeiros.
+11. Teste a revogacao de consentimento para confirmar a limpeza dos dados financeiros.
 
 ## Formato Recomendado para CSV/Excel
 
@@ -144,6 +145,8 @@ Arquivos prontos para teste ficam em:
 - Selecao multipla para excluir lancamentos ou aplicar categoria em massa.
 - Campo de observacao por lancamento.
 - Dashboard com gasto medio por dia, previsao de fechamento, maior risco e melhor evolucao.
+- Dashboard com limite restante estimado para gastar sem comprometer a meta.
+- Analise com impacto dos gastos na meta financeira.
 - Meta principal selecionavel e aportes editaveis.
 - Historico de mudancas nas metas.
 - Seletor entre analise local e OpenAI.

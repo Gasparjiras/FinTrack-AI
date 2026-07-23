@@ -39,4 +39,20 @@ assert.equal(interCandidates.filter((item) => item.value > 0).length, 2, "coluna
 assert.equal(interCandidates.filter((item) => item.value < 0).length, 2, "coluna Debito deve virar saida");
 assert.ok(interCandidates.find((item) => item.description === "Supermercado Atacadao").category === "Mercado");
 
+const manualMapping = { date: "Data", description: "Descricao", value: "Valor" };
+const manualRows = [
+  { Data: "15/07/2026", Descricao: "Faculdade", Valor: "614,42" },
+  { Data: "15/07/2026", Descricao: "Seguro da Moto", Valor: "145,22" },
+  { Data: "15/07/2026", Descricao: "Internet Celular", Valor: "48,99" },
+  { Data: "15/07/2026", Descricao: "Pix recebido salario", Valor: "3723,15" },
+].map((row) => __test.rowToImportCandidate(row, manualMapping, []));
+assert.equal(manualRows.find((item) => item.description === "Faculdade").category, "Educação");
+assert.ok(manualRows.find((item) => item.description === "Faculdade").value < 0);
+assert.equal(manualRows.find((item) => item.description === "Seguro da Moto").category, "Transporte");
+assert.ok(manualRows.find((item) => item.description === "Seguro da Moto").value < 0);
+assert.equal(manualRows.find((item) => item.description === "Internet Celular").category, "Contas fixas");
+assert.ok(manualRows.find((item) => item.description === "Internet Celular").value < 0);
+assert.equal(manualRows.find((item) => item.description === "Pix recebido salario").category, "Receita");
+assert.ok(manualRows.find((item) => item.description === "Pix recebido salario").value > 0);
+
 console.log("Import parser fixture OK");

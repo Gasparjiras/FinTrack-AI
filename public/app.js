@@ -34,7 +34,6 @@ const importAssistant = document.querySelector("#importAssistant");
 const confirmImportBtn = document.querySelector("#confirmImportBtn");
 const printReportBtn = document.querySelector("#printReportBtn");
 const exportReportCsvBtn = document.querySelector("#exportReportCsvBtn");
-const presentationModeBtn = document.querySelector("#presentationModeBtn");
 const closeMonthBtn = document.querySelector("#closeMonthBtn");
 const monthlyClosingList = document.querySelector("#monthlyClosingList");
 const dashboardHealthScore = document.querySelector("#dashboardHealthScore");
@@ -1213,7 +1212,7 @@ function updateGoalLivePreview() {
   const modeMonths = modeMonthly > 0 && remaining > 0 ? Math.ceil(remaining / modeMonthly) : 0;
   const monthStatus = modeMonths <= months ? "dentro do prazo" : `${modeMonths - months} mês(es) além do prazo`;
   const motivational = remaining === 0
-    ? "Meta concluída. Excelente para apresentar o progresso!"
+    ? "Meta concluída. Excelente progresso registrado."
     : modeMonthly >= monthly
       ? `Com o modo ${labels[intensity]}, a previsão fica em ${modeMonths} mês(es).`
       : `Modo ${labels[intensity]} alivia o mês, mas pode levar ${modeMonths} mês(es).`;
@@ -1330,6 +1329,13 @@ function updateSummaryKpis() {
   document.querySelector("#goalProgressKpi").textContent = `${analysis.goal?.progressPercentage || 0}%`;
   document.querySelector("#goalProgressDetail").textContent = analysis.goal?.status || "Cadastre uma meta";
   document.querySelector("#suggestedSavingsKpi").textContent = currency.format(analysis.potentialMonthlySavings || 0);
+  const remainingSafeSpend = calculateRemainingSafeSpend();
+  const remainingSafeSpendEl = document.querySelector("#remainingSafeSpend");
+  if (remainingSafeSpendEl) {
+    remainingSafeSpendEl.textContent = currency.format(remainingSafeSpend);
+    remainingSafeSpendEl.classList.toggle("value-negative", remainingSafeSpend < 0);
+    remainingSafeSpendEl.classList.toggle("value-positive", remainingSafeSpend >= 0);
+  }
   document.querySelector("#aiIncome").textContent = currency.format(analysis.totalIncome);
   document.querySelector("#aiExpenses").textContent = currency.format(analysis.totalExpenses);
   document.querySelector("#aiBalance").textContent = currency.format(analysis.balance);
@@ -1338,6 +1344,18 @@ function updateSummaryKpis() {
   renderDashboardGoalCard();
   renderDashboardDecisionCards();
   renderAssistantHub();
+}
+
+function calculateRemainingSafeSpend() {
+  if (!analysis) return 0;
+  const suggestions = (analysis.categoryBudgetSuggestions || []).filter((item) => Number(item.suggestedMonthly || 0) > 0);
+  if (suggestions.length) {
+    const suggestedTotal = suggestions.reduce((sum, item) => sum + Number(item.suggestedMonthly || 0), 0);
+    return suggestedTotal - Number(analysis.totalExpenses || 0);
+  }
+  const goalReserve = Number(analysis.goal?.monthlyTarget || 0);
+  const income = Number(analysis.totalIncome || 0);
+  return income - goalReserve - Number(analysis.totalExpenses || 0);
 }
 
 function renderDashboardDecisionCards() {
@@ -1608,6 +1626,7 @@ function renderAIReport() {
     ${renderFocusAlertsBlock(visibleAlerts, alerts)}
     ${renderFocusRecommendationsBlock(visibleRecommendations, recommendations)}
     ${renderBudgetSuggestionBlock()}
+    ${renderGoalImpactBlock()}
     ${renderRecurringInsightBlock()}
     ${renderGoalPlanBlock(ai)}
     ${renderWeeklyPlanBlock(ai)}
@@ -1847,6 +1866,39 @@ function renderBudgetSuggestionBlock() {
         }).join("")}
       </div>
       ${items.length > visible.length ? `<details class="ai-details"><summary>Ver todas as categorias</summary><div class="budget-suggestion-table extra-budget-rows">${items.slice(visible.length).map((item) => `<article class="${item.status}"><strong>${escapeHtml(item.category)}</strong><span>${currency.format(item.currentMonthly || 0)}/mês</span><span>${currency.format(item.suggestedMonthly || 0)}/mês</span><b>${Number(item.difference || 0) > 0 ? `-${currency.format(item.difference)}` : "ok"}</b><small>${escapeHtml(item.reason)}</small></article>`).join("")}</div></details>` : ""}
+    </div>
+  `;
+}
+
+function renderGoalImpactBlock() {
+  const goal = analysis?.goal;
+  const categories = (analysis?.categories || []).filter((item) => Number(item.total || 0) > 0).slice(0, 4);
+  if (!goal || !categories.length) return "";
+  const monthlyTarget = Math.max(Number(goal.monthlyTarget || 0), 0);
+  const remaining = Math.max(Number(goal.remainingAmount || 0), 0);
+  if (!monthlyTarget && !remaining) return "";
+  const items = categories.map((item) => {
+    const total = Number(item.total || 0);
+    const reduction = total * 0.15;
+    const targetCoverage = monthlyTarget > 0 ? Math.round((reduction / monthlyTarget) * 100) : 0;
+    const quarterSavings = reduction * 3;
+    return { ...item, reduction, targetCoverage, quarterSavings };
+  }).sort((a, b) => b.reduction - a.reduction).slice(0, 3);
+  return `
+    <div class="ai-section goal-impact-block">
+      <div class="section-title-row"><h3>Impacto dos gastos na meta</h3><span>${escapeHtml(goal.goal_name || "meta")}</span></div>
+      <div class="goal-impact-grid">
+        ${items.map((item) => `
+          <article>
+            <span class="goal-impact-icon"><i data-lucide="${categoryIcon(item.category)}"></i></span>
+            <div>
+              <strong>${escapeHtml(item.category)}</strong>
+              <p>Cortar 15% liberaria cerca de ${currency.format(item.reduction)} no mês${monthlyTarget ? `, cobrindo ${item.targetCoverage}% do aporte ideal` : ""}.</p>
+              <small>Se mantiver por 3 meses, isso soma aproximadamente ${currency.format(item.quarterSavings)} para reforçar a meta.</small>
+            </div>
+          </article>
+        `).join("")}
+      </div>
     </div>
   `;
 }
@@ -2607,7 +2659,7 @@ function printReportPdf() {
           <h2>Últimos lançamentos</h2>
           <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>${recentTransactions.map((item) => `<tr><td>${formatDate(item.date)}</td><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.category)}</td><td class="${item.value < 0 ? "negative" : "positive"}">${currency.format(item.value)}</td></tr>`).join("") || `<tr><td colspan="4">Nenhum lançamento.</td></tr>`}</tbody></table>
           <h2>LGPD e origem dos dados</h2>
-          <p>Este relatório usa apenas dados cadastrados ou importados pelo usuário. Em versão acadêmica, não há conexão real com Open Finance; a importação manual valida a lógica de análise, metas, recomendações e direitos do titular.</p>
+          <p>Este relatório usa apenas dados cadastrados ou importados pelo usuário. Não há conexão bancária automática ativa; os arquivos são processados para gerar análise, metas, recomendações e direitos do titular.</p>
         </main>
         <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));</script>
       </body>
@@ -2618,108 +2670,10 @@ function printReportPdf() {
   reportWindow.document.close();
 }
 
-function openPresentationMode() {
-  let data = analysis;
-  let demo = false;
-  if (!data || (data.totalIncome === 0 && data.totalExpenses === 0)) {
-    demo = confirm("Não há dados reais suficientes para apresentar. Abrir modo apresentação com dados demonstrativos apenas nesta janela?");
-    if (!demo) return;
-    data = demoPresentationAnalysis();
-  }
-  const reportWindow = window.open("", "_blank");
-  if (!reportWindow) return toast("Permita pop-ups para abrir o modo apresentação.");
-  const topCategories = (data.categories || []).slice(0, 5);
-  const score = data.financialScore || { score: 0, label: "Sem dados", summary: "Sem dados suficientes." };
-  const recurring = data.recurring || [];
-  const weeklyPlan = (data.ai?.weeklyPlan || data.aiBlocks?.weeklyPlan || data.weeklyPlan || []).slice(0, 7);
-  const html = `
-    <!doctype html>
-    <html lang="pt-BR">
-      <head>
-        <meta charset="utf-8">
-        <title>FinTrack AI - Modo apresentação</title>
-        <style>
-          body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: #F7F5F0; color: #0E1F1B; }
-          main { min-height: 100vh; padding: 44px; display: grid; gap: 24px; }
-          .hero { border-radius: 28px; padding: 34px; color: #fff; background: linear-gradient(135deg, #071C17, #0D3228 62%, #D99B4C); display: grid; grid-template-columns: 1.2fr .8fr; gap: 24px; align-items: end; }
-          h1 { margin: 0 0 10px; font-size: clamp(36px, 5vw, 70px); letter-spacing: -.04em; }
-          h2 { margin: 0 0 14px; font-size: 22px; }
-          p { line-height: 1.5; color: inherit; opacity: .82; }
-          .badge { display: inline-flex; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,.12); font-weight: 800; margin-bottom: 16px; }
-          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-          .card { border: 1px solid rgba(14,31,27,.12); border-radius: 22px; padding: 22px; background: #FFFDF8; box-shadow: 0 18px 45px rgba(30,23,12,.08); }
-          .card span { color: #67736d; font-size: 12px; font-weight: 850; text-transform: uppercase; }
-          .card strong { display: block; margin-top: 8px; font-size: 28px; }
-          .wide { grid-column: span 2; }
-          .list { display: grid; gap: 10px; }
-          .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #E6E0D6; }
-          .positive { color: #1F8A5F; } .negative { color: #C0392B; }
-          @media (max-width: 850px) { main { padding: 20px; } .hero, .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
-        </style>
-      </head>
-      <body>
-        <main>
-          <section class="hero">
-            <div><span class="badge">FinTrack AI ${demo ? "• demonstração acadêmica" : "• dados reais do usuário"}</span><h1>Planejador financeiro com IA</h1><p>Protótipo acadêmico com importação manual de extratos, categorização de gastos, metas, recomendações e controle LGPD.</p></div>
-            <div><h2>Resumo de ${escapeHtml(monthLabel(data.selectedMonth || selectedAnalysisMonth))}</h2><p>${escapeHtml(data.ai?.executiveSummary || data.insights?.[0] || localSummary())}</p></div>
-          </section>
-          <section class="grid">
-            <article class="card"><span>Entradas</span><strong class="positive">${currency.format(data.totalIncome || 0)}</strong></article>
-            <article class="card"><span>Gastos</span><strong class="negative">${currency.format(data.totalExpenses || 0)}</strong></article>
-            <article class="card"><span>Saldo</span><strong>${currency.format(data.balance || 0)}</strong></article>
-            <article class="card"><span>Saúde financeira</span><strong>${score.score}/100</strong><p>${escapeHtml(score.label)}</p></article>
-            <article class="card wide"><h2>Top categorias</h2><div class="list">${topCategories.map((item) => `<div class="row"><span>${escapeHtml(item.category)}</span><strong>${currency.format(item.total || 0)} • ${item.share || 0}%</strong></div>`).join("") || "Sem categorias."}</div></article>
-            <article class="card wide"><h2>Recorrências detectadas</h2><div class="list">${recurring.slice(0, 5).map((item) => `<div class="row"><span>${escapeHtml(item.description)}</span><strong>${currency.format(item.monthlyEstimate || item.total || 0)}/mês</strong></div>`).join("") || "Sem recorrências detectadas."}</div></article>
-            <article class="card wide"><h2>Plano de 7 dias</h2><div class="list">${weeklyPlan.map((item, index) => `<div class="row"><span>Dia ${index + 1}</span><strong>${escapeHtml(item)}</strong></div>`).join("") || "Gere uma análise para criar o plano semanal."}</div></article>
-            <article class="card wide"><h2>Meta principal</h2><p>${data.goal ? `${escapeHtml(data.goal.goal_name)}: ${data.goal.progressPercentage}% concluída. Falta ${currency.format(data.goal.remainingAmount || 0)}.` : "Nenhuma meta cadastrada."}</p></article>
-            <article class="card wide"><h2>Observação LGPD</h2><p>Sem Open Finance real: dados são inseridos manualmente ou importados pelo usuário. A opção demonstrativa do modo apresentação não grava dados no banco.</p></article>
-          </section>
-        </main>
-      </body>
-    </html>
-  `;
-  reportWindow.document.open();
-  reportWindow.document.write(html);
-  reportWindow.document.close();
-}
-
-function demoPresentationAnalysis() {
-  return {
-    selectedMonth: selectedAnalysisMonth,
-    totalIncome: 4200,
-    totalExpenses: 2730,
-    balance: 1470,
-    categories: [
-      { category: "Mercado", total: 820, share: 30 },
-      { category: "Contas fixas", total: 760, share: 28 },
-      { category: "Alimentação", total: 480, share: 18 },
-      { category: "Transporte", total: 320, share: 12 },
-      { category: "Assinaturas", total: 150, share: 5 },
-    ],
-    recurring: [
-      { description: "Spotify Premium", monthlyEstimate: 21.9, category: "Assinaturas" },
-      { description: "Internet residencial", monthlyEstimate: 119.9, category: "Contas fixas" },
-    ],
-    weeklyPlan: [
-      "Revise Mercado, a maior categoria do exemplo.",
-      "Confirme se todas as despesas estão categorizadas.",
-      "Separe o aporte da reserva no início do mês.",
-      "Reduza delivery por uma semana.",
-      "Revise assinaturas recorrentes.",
-      "Compare gastos com o mês anterior.",
-      "Feche o mês e registre o aprendizado.",
-    ],
-    financialScore: { score: 74, label: "Boa", summary: "Exemplo acadêmico." },
-    goal: { goal_name: "Reserva de emergência", progressPercentage: 38, remainingAmount: 6200 },
-    insights: ["Gastos controlados e meta viável com aportes mensais constantes."],
-  };
-}
-
 document.querySelector("#exportBtn").addEventListener("click", exportData);
 document.querySelector("#settingsExportBtn").addEventListener("click", exportData);
 printReportBtn?.addEventListener("click", printReportPdf);
 exportReportCsvBtn?.addEventListener("click", exportReportCsv);
-presentationModeBtn?.addEventListener("click", openPresentationMode);
 document.querySelectorAll("[data-export-json]").forEach((button) => button.addEventListener("click", exportData));
 document.querySelectorAll("[data-export-csv]").forEach((button) => button.addEventListener("click", exportReportCsv));
 document.querySelectorAll("[data-export-pdf]").forEach((button) => button.addEventListener("click", printReportPdf));
