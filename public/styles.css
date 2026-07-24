@@ -1545,6 +1545,7 @@ td:last-child { width: 190px; }
 
 .value-negative { color: #c2463f !important; }
 .value-positive { color: #146b59 !important; }
+.value-neutral { color: #4f6470 !important; }
 .value-warning { color: #b8892d !important; }
 
 .category-suggestion {
@@ -8988,6 +8989,11 @@ table,
 .dashboard-active .budget-suggestion-table article.reduzir {
   border-color: rgba(224, 138, 60, 0.34);
   background: rgba(224, 138, 60, 0.055);
+}
+
+.dashboard-active .budget-suggestion-table article.acompanhar {
+  border-color: rgba(71, 102, 217, 0.22);
+  background: rgba(71, 102, 217, 0.045);
 }
 
 .dashboard-active .budget-suggestion-table strong,

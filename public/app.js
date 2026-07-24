@@ -1689,6 +1689,28 @@ function prioritizeRecommendations(items) {
   return [...(items || [])].sort((a, b) => Number(b.potentialMonthlySavings || 0) - Number(a.potentialMonthlySavings || 0));
 }
 
+const FLEXIBLE_ANALYSIS_CATEGORIES = new Set(["Assinaturas", "Lazer", "Alimentação", "Compras", "Transporte", "Outros"]);
+
+function isFlexibleAnalysisCategory(category) {
+  return FLEXIBLE_ANALYSIS_CATEGORIES.has(category);
+}
+
+function recommendationValueLabel(item) {
+  const savings = Number(item?.potentialMonthlySavings || item?.monthlySavings || 0);
+  return savings > 0 ? `${currency.format(savings)}/mês` : "acompanhar";
+}
+
+function budgetAdjustmentLabel(item) {
+  const difference = Number(item?.difference || 0);
+  if (item?.status === "reduzir" && difference > 0) {
+    return { text: `-${currency.format(difference)}`, className: "value-negative" };
+  }
+  if (item?.status === "acompanhar") {
+    return { text: "acompanhar", className: "value-neutral" };
+  }
+  return { text: "ok", className: "value-positive" };
+}
+
 function renderFocusAlertsBlock(visibleAlerts, allAlerts) {
   if (!allAlerts.length) return renderTextBlock("Alertas principais", analysis.aiBlocks?.alerts || [], "triangle-alert");
   const hidden = Math.max(allAlerts.length - visibleAlerts.length, 0);
@@ -1708,9 +1730,9 @@ function renderFocusRecommendationsBlock(visibleRecommendations, allRecommendati
     <div class="ai-section ai-focus-section">
       <div class="section-title-row"><h3>Oportunidades de economia</h3><span>priorizadas por impacto</span></div>
       <div class="recommendations compact-recommendations">
-        ${visibleRecommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings || 0)}/mês</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos para gerar oportunidades de economia.</div>`}
+        ${visibleRecommendations.map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${escapeHtml(recommendationValueLabel(item))}</b></article>`).join("") || `<div class="empty-compact">Cadastre mais gastos flexíveis para gerar oportunidades de economia.</div>`}
       </div>
-      ${allRecommendations.length > visibleRecommendations.length ? `<details class="ai-details"><summary>Ver outras ${allRecommendations.length - visibleRecommendations.length} oportunidade(s)</summary><div class="recommendations compact-recommendations">${allRecommendations.slice(visibleRecommendations.length).map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${currency.format(item.potentialMonthlySavings || 0)}/mês</b></article>`).join("")}</div></details>` : ""}
+      ${allRecommendations.length > visibleRecommendations.length ? `<details class="ai-details"><summary>Ver outras ${allRecommendations.length - visibleRecommendations.length} oportunidade(s)</summary><div class="recommendations compact-recommendations">${allRecommendations.slice(visibleRecommendations.length).map((item) => `<article class="recommendation-card"><div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.message)}</span></div><b>${escapeHtml(recommendationValueLabel(item))}</b></article>`).join("")}</div></details>` : ""}
     </div>
   `;
 }
@@ -1886,26 +1908,31 @@ function renderBudgetSuggestionBlock() {
       <div class="budget-suggestion-table">
         <div class="budget-suggestion-head"><span>Categoria</span><span>Hoje</span><span>Sugerido</span><span>Ajuste</span></div>
         ${visible.map((item) => {
-          const difference = Number(item.difference || 0);
+          const adjustment = budgetAdjustmentLabel(item);
           return `
             <article class="${item.status}">
               <strong>${escapeHtml(item.category)}</strong>
               <span>${currency.format(item.currentMonthly || 0)}/mês</span>
               <span>${currency.format(item.suggestedMonthly || 0)}/mês</span>
-              <b class="${difference > 0 ? "value-negative" : "value-positive"}">${difference > 0 ? `-${currency.format(difference)}` : "ok"}</b>
+              <b class="${adjustment.className}">${escapeHtml(adjustment.text)}</b>
               <small>${escapeHtml(item.reason)}</small>
             </article>
           `;
         }).join("")}
       </div>
-      ${items.length > visible.length ? `<details class="ai-details"><summary>Ver todas as categorias</summary><div class="budget-suggestion-table extra-budget-rows">${items.slice(visible.length).map((item) => `<article class="${item.status}"><strong>${escapeHtml(item.category)}</strong><span>${currency.format(item.currentMonthly || 0)}/mês</span><span>${currency.format(item.suggestedMonthly || 0)}/mês</span><b>${Number(item.difference || 0) > 0 ? `-${currency.format(item.difference)}` : "ok"}</b><small>${escapeHtml(item.reason)}</small></article>`).join("")}</div></details>` : ""}
+      ${items.length > visible.length ? `<details class="ai-details"><summary>Ver todas as categorias</summary><div class="budget-suggestion-table extra-budget-rows">${items.slice(visible.length).map((item) => {
+        const adjustment = budgetAdjustmentLabel(item);
+        return `<article class="${item.status}"><strong>${escapeHtml(item.category)}</strong><span>${currency.format(item.currentMonthly || 0)}/mês</span><span>${currency.format(item.suggestedMonthly || 0)}/mês</span><b class="${adjustment.className}">${escapeHtml(adjustment.text)}</b><small>${escapeHtml(item.reason)}</small></article>`;
+      }).join("")}</div></details>` : ""}
     </div>
   `;
 }
 
 function renderGoalImpactBlock() {
   const goal = analysis?.goal;
-  const categories = (analysis?.categories || []).filter((item) => Number(item.total || 0) > 0).slice(0, 4);
+  const categories = (analysis?.categories || [])
+    .filter((item) => Number(item.total || 0) > 0 && isFlexibleAnalysisCategory(item.category))
+    .slice(0, 4);
   if (!goal || !categories.length) return "";
   const monthlyTarget = Math.max(Number(goal.monthlyTarget || 0), 0);
   const remaining = Math.max(Number(goal.remainingAmount || 0), 0);
@@ -1926,7 +1953,7 @@ function renderGoalImpactBlock() {
             <span class="goal-impact-icon"><i data-lucide="${categoryIcon(item.category)}"></i></span>
             <div>
               <strong>${escapeHtml(item.category)}</strong>
-              <p>Cortar 15% liberaria cerca de ${currency.format(item.reduction)} no mês${monthlyTarget ? `, cobrindo ${item.targetCoverage}% do aporte ideal` : ""}.</p>
+              <p>Ajustar 15% nessa categoria flexível liberaria cerca de ${currency.format(item.reduction)} no mês${monthlyTarget ? `, cobrindo ${item.targetCoverage}% do aporte ideal` : ""}.</p>
               <small>Se mantiver por 3 meses, isso soma aproximadamente ${currency.format(item.quarterSavings)} para reforçar a meta.</small>
             </div>
           </article>

@@ -1900,42 +1900,114 @@ function buildGoalPlan(goal, monthlyBalance, potentialMonthlySavings) {
   };
 }
 
+const ESSENTIAL_SPENDING_CATEGORIES = new Set(["Mercado", "Contas fixas", "Saúde", "Educação", "Metas"]);
+const FLEXIBLE_SPENDING_PLANS = {
+  Assinaturas: {
+    rate: 0.5,
+    factor: 0.55,
+    priority: 5,
+    title: "Revisar assinaturas pouco usadas",
+    message: ({ examples, formattedSavings }) => examples.length
+      ? `Você tem serviços recorrentes como ${examples.join(", ")}. Cancelar, pausar ou dividir o que quase não usa pode liberar aproximadamente ${formattedSavings} por mês.`
+      : `Assinaturas são um gasto flexível. Revisar serviços pouco usados pode liberar aproximadamente ${formattedSavings} por mês.`,
+  },
+  Lazer: {
+    rate: 0.25,
+    factor: 0.75,
+    priority: 4,
+    title: "Ajustar lazer sem cortar tudo",
+    message: ({ formattedSavings }) => `Lazer não precisa sumir, mas precisa caber no plano. Reduzir 25% das saídas de lazer pode liberar aproximadamente ${formattedSavings} por mês.`,
+  },
+  Alimentação: {
+    rate: 0.2,
+    factor: 0.82,
+    priority: 4,
+    title: "Atacar delivery e comida fora",
+    message: ({ item, formattedSavings }) => `O foco aqui não é cortar alimentação básica. Reduzir delivery, restaurante e compras por impulso em alimentação pode liberar cerca de ${formattedSavings} por mês (${item.share}% das despesas).`,
+  },
+  Compras: {
+    rate: 0.15,
+    factor: 0.78,
+    priority: 3,
+    title: "Segurar compras não essenciais",
+    message: ({ formattedSavings }) => `Compras avulsas costumam ser mais ajustáveis que mercado e contas. Adiar ou limitar parte delas pode liberar aproximadamente ${formattedSavings} por mês.`,
+  },
+  Transporte: {
+    rate: 0.1,
+    factor: 0.92,
+    priority: 2,
+    title: "Otimizar deslocamentos",
+    message: ({ formattedSavings }) => `Transporte pode ter parte fixa. Em vez de cortar deslocamentos necessários, busque rotas, combustível, caronas ou apps em horários melhores para tentar liberar cerca de ${formattedSavings} por mês.`,
+  },
+  Outros: {
+    rate: 0.1,
+    factor: 0.9,
+    priority: 1,
+    title: "Detalhar gastos sem categoria clara",
+    message: ({ formattedSavings }) => `A categoria Outros precisa ser investigada antes de virar corte. Separar o que é essencial do que é impulso pode liberar até ${formattedSavings} por mês.`,
+  },
+};
+
+function flexibleSpendingPlan(category) {
+  return FLEXIBLE_SPENDING_PLANS[category] || null;
+}
+
+function isEssentialSpendingCategory(category) {
+  return ESSENTIAL_SPENDING_CATEGORIES.has(category);
+}
+
+function categoryGuidanceType(category) {
+  if (flexibleSpendingPlan(category)) return "flexivel";
+  if (isEssentialSpendingCategory(category)) return "essencial";
+  return "neutra";
+}
+
 function buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPlan) {
   const safeMonths = Math.max(Number(months || 1), 1);
   const monthlyIncome = totalIncome > 0 ? totalIncome / safeMonths : 0;
   const goalReserve = Math.max(Number(goalPlan?.monthlyTarget || 0), 0);
   const generalReserve = monthlyIncome > 0 ? monthlyIncome * 0.12 : 0;
   const availableForExpenses = Math.max(monthlyIncome - Math.max(goalReserve, generalReserve), 0);
-  const reductionFactors = {
-    "Assinaturas": 0.55,
-    "Lazer": 0.75,
-    "Alimentação": 0.82,
-    "Compras": 0.78,
-    "Transporte": 0.92,
-    "Mercado": 0.94,
-    "Contas fixas": 0.96,
-    "Saúde": 1,
-    "Educação": 1,
-    "Metas": 1,
-    "Outros": 0.85,
-  };
   const base = categories
     .filter((item) => item.category !== "Receita")
     .map((item) => {
       const currentMonthly = Number(item.total || 0) / safeMonths;
-      const factor = reductionFactors[item.category] ?? 0.9;
+      const plan = flexibleSpendingPlan(item.category);
+      const factor = plan?.factor ?? 1;
       const suggestedMonthly = Math.max(currentMonthly * factor, 0);
-      return { ...item, currentMonthly, suggestedMonthly };
+      return { ...item, currentMonthly, suggestedMonthly, guidanceType: categoryGuidanceType(item.category), plan };
     });
-  const baseTotal = base.reduce((sum, item) => sum + item.suggestedMonthly, 0);
-  const scale = availableForExpenses > 0 && baseTotal > availableForExpenses ? availableForExpenses / baseTotal : 1;
+  const essentialTotal = base
+    .filter((item) => item.guidanceType !== "flexivel")
+    .reduce((sum, item) => sum + item.currentMonthly, 0);
+  const flexibleBaseTotal = base
+    .filter((item) => item.guidanceType === "flexivel")
+    .reduce((sum, item) => sum + item.suggestedMonthly, 0);
+  const availableForFlexible = Math.max(availableForExpenses - essentialTotal, 0);
+  const flexibleScale = flexibleBaseTotal > 0 && availableForFlexible < flexibleBaseTotal
+    ? Math.max(availableForFlexible / flexibleBaseTotal, 0.55)
+    : 1;
   return base.map((item) => {
-    const suggestedMonthly = Number((item.suggestedMonthly * scale).toFixed(2));
+    const rawSuggestion = item.guidanceType === "flexivel"
+      ? item.suggestedMonthly * flexibleScale
+      : item.currentMonthly;
+    const suggestedMonthly = Number(rawSuggestion.toFixed(2));
     const difference = Number((item.currentMonthly - suggestedMonthly).toFixed(2));
-    const status = item.currentMonthly > suggestedMonthly * 1.08 ? "reduzir" : "adequado";
-    const reason = status === "reduzir"
-      ? `Tente manter ${item.category} perto de ${money(suggestedMonthly)} por mês para abrir espaço para metas.`
-      : `${item.category} está em um nível compatível com sua renda e meta atual.`;
+    const isFlexible = item.guidanceType === "flexivel";
+    const isEssential = item.guidanceType === "essencial";
+    const status = isFlexible && item.currentMonthly > suggestedMonthly * 1.08
+      ? "reduzir"
+      : isEssential && item.currentMonthly > suggestedMonthly * 1.15
+        ? "acompanhar"
+        : "adequado";
+    let reason;
+    if (status === "reduzir") {
+      reason = `Categoria flexível: tente manter perto de ${money(suggestedMonthly)} por mês para abrir espaço para metas.`;
+    } else if (status === "acompanhar") {
+      reason = `${item.category} parece essencial. Acompanhe variação, compare alternativas e evite desperdício, sem tratar como corte obrigatório.`;
+    } else {
+      reason = `${item.category} está em um nível compatível com sua renda e meta atual.`;
+    }
     return {
       category: item.category,
       currentMonthly: Number(item.currentMonthly.toFixed(2)),
@@ -1944,6 +2016,7 @@ function buildCategoryBudgetSuggestions(categories, totalIncome, months, goalPla
       share: item.share,
       status,
       reason,
+      guidanceType: item.guidanceType,
     };
   }).sort((a, b) => b.currentMonthly - a.currentMonthly);
 }
@@ -2174,8 +2247,10 @@ function buildSevenDayPlan({ categories = [], recommendations = [], goalPlan = n
   } else {
     actions.push("Dia 3: crie uma meta com valor, prazo e quanto já guardou para transformar o saldo em plano.");
   }
-  if (topRecommendation) {
-    actions.push(`Dia 4: aplique o corte sugerido em ${topRecommendation.category} e tente liberar ${money(topRecommendation.potentialMonthlySavings)} no mês.`);
+  if (topRecommendation && Number(topRecommendation.potentialMonthlySavings || 0) > 0) {
+    actions.push(`Dia 4: foque em ${topRecommendation.category}; a economia possível estimada é de ${money(topRecommendation.potentialMonthlySavings)} no mês.`);
+  } else if (topRecommendation) {
+    actions.push(`Dia 4: acompanhe ${topRecommendation.category} e procure desperdícios ou compras por impulso antes de pensar em corte.`);
   } else {
     actions.push("Dia 4: escolha uma categoria variável e defina um teto semanal simples para evitar gasto por impulso.");
   }
@@ -2257,55 +2332,43 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     summary.types[type] = (summary.types[type] || 0) + 1;
     return summary;
   }, { sources: {}, confidence: {}, types: {} });
-  const reductionRates = {
-    Assinaturas: 0.5,
-    Lazer: 0.25,
-    Alimentação: 0.2,
-    Compras: 0.15,
-    Transporte: 0.1,
-    Mercado: 0.1,
-  };
   let recommendations = categories
-    .filter((item) => reductionRates[item.category] && item.total > 0)
+    .filter((item) => flexibleSpendingPlan(item.category) && item.total > 0)
     .map((item) => {
+      const plan = flexibleSpendingPlan(item.category);
       const monthlyCategory = item.total / months;
-      const potentialMonthlySavings = monthlyCategory * reductionRates[item.category];
+      const potentialMonthlySavings = monthlyCategory * plan.rate;
       const examples = [...new Set(analysisTransactions
         .filter((transaction) => transaction.value < 0 && transaction.category === item.category)
         .sort((a, b) => a.value - b.value)
         .map((transaction) => transaction.description))]
         .slice(0, 3);
-      const percent = Math.round(reductionRates[item.category] * 100);
       const formattedSavings = potentialMonthlySavings.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      let message = `Reduzir ${percent}% dos gastos de ${item.category.toLowerCase()} pode liberar aproximadamente ${formattedSavings} por mês.`;
-      if (item.category === "Assinaturas" && examples.length) {
-        message = `Você tem gastos com assinaturas como ${examples.join(", ")}. Revisar ou cancelar serviços pouco usados pode economizar aproximadamente ${formattedSavings} por mês.`;
-      } else if (item.category === "Alimentação") {
-        message = `Alimentação fora de casa representa ${item.share}% das despesas. Reduzir esse grupo em ${percent}% pode economizar aproximadamente ${formattedSavings} por mês.`;
-      }
       return {
         category: item.category,
-        title: `Oportunidade em ${item.category}`,
-        message,
+        title: plan.title,
+        message: plan.message({ item, examples, formattedSavings }),
         examples,
         potentialMonthlySavings,
+        priority: plan.priority,
+        guidanceType: "flexivel",
       };
     })
-    .sort((a, b) => b.potentialMonthlySavings - a.potentialMonthlySavings);
+    .sort((a, b) => (b.priority - a.priority) || b.potentialMonthlySavings - a.potentialMonthlySavings);
   if (recommendations.length === 0 && categories[0]) {
-    const topCategory = categories[0];
-    const monthlyCategory = topCategory.total / months;
-    const potentialMonthlySavings = monthlyCategory * 0.1;
+    const topEssential = categories.find((item) => isEssentialSpendingCategory(item.category)) || categories[0];
     const examples = largestExpenses
-      .filter((transaction) => transaction.category === topCategory.category)
+      .filter((transaction) => transaction.category === topEssential.category)
       .map((transaction) => transaction.description)
       .slice(0, 3);
     recommendations = [{
-      category: topCategory.category,
-      title: `Revise ${topCategory.category}`,
-      message: `Seu maior gasto está em ${topCategory.category}, com ${topCategory.share}% das despesas. Reduzir 10% desse grupo liberaria cerca de ${potentialMonthlySavings.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por mês.`,
+      category: topEssential.category,
+      title: `Acompanhar ${topEssential.category}`,
+      message: `${topEssential.category} pesa ${topEssential.share}% das despesas, mas pode ser essencial. Em vez de cortar direto, compare preços, planeje compras e separe o que é necessidade do que é impulso.`,
       examples,
-      potentialMonthlySavings,
+      potentialMonthlySavings: 0,
+      priority: 0,
+      guidanceType: "essencial",
     }];
   }
   const potentialMonthlySavings = recommendations.reduce((sum, item) => sum + item.potentialMonthlySavings, 0);
@@ -2320,7 +2383,17 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     if (totalIncome === 0 && totalExpenses > 0) insights.push("O arquivo parece conter apenas despesas, como uma fatura de cartão. Cadastre a renda mensal para comparar os gastos com sua capacidade real.");
     if (totalIncome > 0 && balance < 0) insights.push("Suas despesas estão maiores que suas receitas no período. Priorize cortar gastos variáveis e renegociar compromissos.");
     if (balance >= 0 && totalIncome > 0) insights.push("Você fechou o período no positivo. Separe uma parte do saldo para reserva de emergência antes de aumentar gastos.");
-    if (categories[0]) insights.push(`A maior concentração de despesas está em ${categories[0].category}, com ${categories[0].share}% dos gastos. Revise esse grupo primeiro.`);
+    if (categories[0]) {
+      const topCategory = categories[0];
+      const flexibleCategory = categories.find((item) => flexibleSpendingPlan(item.category));
+      if (isEssentialSpendingCategory(topCategory.category) && flexibleCategory) {
+        insights.push(`A maior despesa foi ${topCategory.category}, mas ela pode ser essencial. Para economia prática, olhe primeiro gastos flexíveis como ${flexibleCategory.category}.`);
+      } else if (isEssentialSpendingCategory(topCategory.category)) {
+        insights.push(`A maior despesa foi ${topCategory.category}. Acompanhe variação, preço e desperdícios antes de transformar isso em meta de corte.`);
+      } else {
+        insights.push(`A maior concentração de despesas está em ${topCategory.category}, com ${topCategory.share}% dos gastos. Revise esse grupo primeiro.`);
+      }
+    }
     if (totalIncome > 0 && totalExpenses / totalIncome > 0.85) insights.push("Mais de 85% da renda foi consumida por despesas. Uma meta saudável é reservar ao menos 10% a 20% da renda.");
     if (analysisTransactions.some((item) => /tarifa|juros|multa|rotativo/i.test(item.description))) insights.push("Há possíveis tarifas, juros ou multas no extrato. Verifique se podem ser evitados ou renegociados.");
     if (pendingCount > 0) insights.push(`${pendingCount} transação(ões) ainda precisam de categoria. Corrija apenas essas pendências para deixar a análise mais precisa.`);
@@ -2361,7 +2434,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     if (goalPlan.feasible) {
       insights.unshift(`Para ${goalPlan.goal_name || objectiveLabels[goalPlan.objective] || objectiveLabels.outro}, reserve cerca de ${money(goalPlan.monthlyTarget)} por mês. Seu saldo médio atual comporta essa meta.`);
     } else {
-      insights.unshift(`Para cumprir a meta no prazo, faltam cerca de ${money(goalPlan.requiredAdjustment)} por mês. Ajuste o prazo ou reduza gastos nas maiores categorias.`);
+      insights.unshift(`Para cumprir a meta no prazo, faltam cerca de ${money(goalPlan.requiredAdjustment)} por mês. Ajuste o prazo ou priorize redução em gastos flexíveis.`);
     }
     if (goalPlan.requiredAdjustment > 0 && potentialMonthlySavings > 0) {
       const coverage = Math.min(Math.round((potentialMonthlySavings / goalPlan.requiredAdjustment) * 100), 100);
@@ -2375,7 +2448,7 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     diagnosis: [
       monthlyComparison?.summary,
       balance >= 0 ? `Seu saldo do período foi positivo em ${money(balance)}.` : `Seu saldo do período ficou negativo em ${money(Math.abs(balance))}.`,
-      categories[0] ? `Sua maior categoria de gasto foi ${categories[0].category}, representando ${categories[0].share}% das despesas.` : "Ainda não há gastos suficientes para identificar padrões.",
+      categories[0] ? `Sua maior categoria de gasto foi ${categories[0].category}, representando ${categories[0].share}% das despesas${isEssentialSpendingCategory(categories[0].category) ? "; trate como acompanhamento, não como corte automático." : "."}` : "Ainda não há gastos suficientes para identificar padrões.",
     ].filter(Boolean),
     mainExpenses: largestExpenses.map((item) => `${item.description}: ${money(item.value)} em ${item.category}.`),
     alerts: [
@@ -2394,7 +2467,14 @@ function buildFinancialAnalysis(transactions, goal, categoryBudgets = [], option
     nextActions: [
       goalPlan ? `Separe ${money(goalPlan.monthlyTarget)} para a meta assim que a renda entrar.` : "Cadastre uma meta com valor, prazo e valor já guardado.",
       recommendations[0] ? recommendations[0].message : "Cadastre mais gastos para encontrar oportunidades de economia.",
-      categoryBudgetSuggestions[0] ? `Use o valor recomendado para ${categoryBudgetSuggestions[0].category}: ${money(categoryBudgetSuggestions[0].suggestedMonthly)} por mês.` : "Acompanhe suas categorias semanalmente.",
+      (categoryBudgetSuggestions.find((item) => item.status === "reduzir") || categoryBudgetSuggestions[0])
+        ? (() => {
+            const item = categoryBudgetSuggestions.find((entry) => entry.status === "reduzir") || categoryBudgetSuggestions[0];
+            return item.status === "reduzir"
+              ? `Use o valor recomendado para ${item.category}: ${money(item.suggestedMonthly)} por mês.`
+              : `Acompanhe ${item.category} semanalmente e ajuste desperdícios antes de cortar o essencial.`;
+          })()
+        : "Acompanhe suas categorias semanalmente.",
     ],
     weeklyPlan,
   };
