@@ -833,10 +833,7 @@ function resetCategoryForm() {
 
 function renderDashboardBudgets() {
   const container = document.querySelector("#dashboardBudgets");
-  const items = (analysis?.categoryBudgetSuggestions || [])
-    .filter((item) => item.suggestedMonthly > 0)
-    .sort((a, b) => (b.currentMonthly || 0) - (a.currentMonthly || 0))
-    .slice(0, 5);
+  const items = orderedBudgetSuggestions(5);
   container.innerHTML = items.map((item) => {
     const percentage = item.suggestedMonthly > 0 ? Math.round((item.currentMonthly / item.suggestedMonthly) * 100) : 0;
     const overAmount = Math.max((item.currentMonthly || 0) - (item.suggestedMonthly || 0), 0);
@@ -860,6 +857,20 @@ function renderDashboardBudgets() {
     `;
   }).join("") || `<div class="empty-compact empty-action">Importe lançamentos para a IA sugerir quanto gastar em cada categoria.</div>`;
   refreshIcons();
+}
+
+function orderedBudgetSuggestions(limit = Infinity) {
+  return (analysis?.categoryBudgetSuggestions || [])
+    .filter((item) => Number(item.suggestedMonthly || 0) > 0)
+    .sort((a, b) => {
+      const statusWeight = { reduzir: 3, acompanhar: 2, adequado: 1 };
+      const aWeight = statusWeight[a.status] || 0;
+      const bWeight = statusWeight[b.status] || 0;
+      const aDifference = Number(a.difference || 0);
+      const bDifference = Number(b.difference || 0);
+      return bWeight - aWeight || bDifference - aDifference || Number(b.currentMonthly || 0) - Number(a.currentMonthly || 0);
+    })
+    .slice(0, limit);
 }
 
 function budgetStatus(percentage) {
@@ -1437,12 +1448,15 @@ function renderAssistantHub() {
   const summary = document.querySelector("#assistantSummary");
   if (!summary || !analysis) return;
   const top = analysis.categories[0];
+  const opportunity = (analysis.recommendations || []).find((item) => Number(item.potentialMonthlySavings || 0) > 0);
   const goal = analysis.goal;
   const balanceText = analysis.balance >= 0
     ? `Seu saldo está positivo em ${currency.format(analysis.balance)}.`
     : `Você gastou ${currency.format(Math.abs(analysis.balance))} acima das entradas.`;
   const topText = top
-    ? `A maior pressão está em ${top.category}, com ${top.share}% das despesas.`
+    ? !isFlexibleAnalysisCategory(top.category) && opportunity
+      ? `A maior despesa é ${top.category}, mas a melhor ação prática está em ${opportunity.category}.`
+      : `A maior pressão está em ${top.category}, com ${top.share}% das despesas.`
     : "Ainda não há gastos suficientes para identificar um padrão principal.";
   const goalText = goal
     ? `Para ${goal.goal_name}, guarde ${currency.format(goal.monthlyTarget)} por mês pelos próximos ${goal.monthsRemaining || goal.target_months} mês(es).`
@@ -2288,7 +2302,7 @@ function renderGoalChart(key, canvasId) {
 }
 
 function renderBudgetChart() {
-  const items = (analysis?.categoryBudgetSuggestions || []).filter((item) => item.suggestedMonthly > 0).slice(0, 8);
+  const items = orderedBudgetSuggestions(8);
   if (!items.length) {
     setChartEmpty("budget", "budgetChart", "Cadastre ou importe lançamentos para a IA sugerir um valor por categoria.");
     return;
@@ -2308,7 +2322,7 @@ function renderBudgetChart() {
 }
 
 function renderBudgetComparisonChart() {
-  const items = (analysis?.categoryBudgetSuggestions || []).filter((item) => item.suggestedMonthly > 0).slice(0, 8);
+  const items = orderedBudgetSuggestions(8);
   if (!items.length) {
     setChartEmpty("budgetComparison", "budgetComparisonChart", "A IA mostrará valor recomendado x gasto real após você importar lançamentos.");
     return;
