@@ -1,12 +1,18 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="15" fill="#0A6F5A"/>
-  <rect x="7" y="7" width="50" height="50" rx="12" fill="url(#paint0_linear_1_3)"/>
-  <path d="M17 18H39V26H26V32H37V40H26V49H17V18Z" fill="white"/>
-  <path d="M40 18H50V26H45V49H36V26H31V18H40Z" fill="#F4D06F"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="paint0_linear_1_3" x1="10" y1="9" x2="55" y2="57" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#10A37F"/>
-      <stop offset="1" stop-color="#4766D9"/>
+    <!-- Gradiente exato a 135 graus do seu CSS -->
+    <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0fb69f" />
+      <stop offset="100%" stop-color="#4d6cff" />
     </linearGradient>
   </defs>
+
+  <!-- Fundo com o gradiente do seu CSS -->
+  <rect width="64" height="64" rx="16" fill="url(#brand-grad)" />
+
+  <!-- Letra F em BRANCO (#ffffff) -->
+  <path d="M12 18H34V26H21V32H32V40H21V49H12V18Z" fill="#ffffff" />
+
+  <!-- Letra T em AMARELO/DOURADO (#facc15) -->
+  <path d="M41 18H52V26H47V49H38V26H33V18H41Z" fill="#facc15" />
 </svg>

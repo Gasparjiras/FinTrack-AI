@@ -14,17 +14,19 @@
       <section class="auth-panel" id="authPanel">
         <div class="brand-side">
           <nav class="brand-mark" aria-label="Marca">
-            <span class="brand-icon brand-logo" aria-hidden="true"><svg viewBox="0 0 64 64" focusable="false"><rect width="64" height="64" rx="15"></rect><path d="M17 18H39V26H26V32H37V40H26V49H17V18Z"></path><path d="M40 18H50V26H45V49H36V26H31V18H40Z"></path></svg></span>
+            <span class="brand-icon brand-logo" aria-hidden="true">
+              <svg viewBox="0 0 64 64" focusable="false">
+                <rect width="64" height="64" rx="15"></rect>
+                <path d="M12 18H34V26H21V32H32V40H21V49H12V18Z"></path>
+                <path d="M41 18H52V26H47V49H38V26H33V18H41Z"></path>
+              </svg>
+            </span>
             <span>FinTrack AI</span>
           </nav>
           <div class="hero-copy">
             <p class="eyebrow">Educação financeira com IA</p>
-            <h1>Controle seus gastos com <span>clareza.</span></h1>
+            <h1>Controle seus gastos com <span>clareza</span>.</h1>
             <p class="lead">Organize despesas, acompanhe metas e receba análises práticas em um painel simples e seguro.</p>
-            <div class="hero-actions">
-              <button data-auth-tab="register" type="button"><span>Criar conta</span><i data-lucide="arrow-right"></i></button>
-              <button class="secondary" data-auth-tab="login" type="button"><span>Entrar</span><i data-lucide="arrow-right"></i></button>
-            </div>
           </div>
         </div>
 
@@ -76,7 +78,7 @@
                   <p><strong>Prazo</strong>Até a exclusão da conta ou solicitação do titular.</p>
                 </div>
               </details>
-              <label class="check"><input name="consentAccepted" type="checkbox" required> Li e aceito antes de cadastrar ou importar transações financeiras.</label>
+              <label class="check"><input name="consentAccepted" type="checkbox" required>Li e aceito antes de cadastrar ou importar transações financeiras.</label>
             </div>
 
             <button id="registerButton" type="submit"><i data-lucide="shield-check"></i><span>Criar minha conta</span></button>
@@ -100,71 +102,19 @@
             <button id="demoLoginBtn" type="button" class="secondary"><i data-lucide="presentation"></i><span>Abrir demo</span></button>
           </div>
         </div>
-        <div class="home-benefits" aria-label="Recursos principais">
-          <article class="feature-card feature-dashboard">
-            <div class="feature-head">
-              <span class="feature-icon"><i data-lucide="layout-dashboard"></i></span>
-              <div>
-                <strong>Painel claro</strong>
-                <span>Centralize renda, gastos, metas e cartoes em um painel intuitivo.</span>
-              </div>
-            </div>
-            <div class="mini-dashboard" aria-hidden="true">
-              <div class="mini-sidebar"><span></span><span></span><span></span><span></span></div>
-              <div class="mini-window">
-                <div class="mini-window-top"><b>Dashboard</b><small>dados do usuário</small></div>
-                <div class="mini-chart"><span></span><span></span><span></span><span></span></div>
-                <div class="mini-row"><em></em><span></span><b></b></div>
-                <div class="mini-row"><em></em><span></span><b></b></div>
-              </div>
-              <div class="mini-bars">
-                <span style="width: 82%"></span>
-                <span style="width: 64%"></span>
-                <span style="width: 48%"></span>
-              </div>
-            </div>
-          </article>
-
-          <article class="feature-card feature-ai">
-            <div class="feature-head">
-              <span class="feature-icon"><i data-lucide="sparkles"></i></span>
-              <div>
-                <strong>Análise com IA</strong>
-                <span>Dicas práticas observando padrões de consumo no mês.</span>
-              </div>
-            </div>
-            <div class="ai-preview" aria-hidden="true">
-              <div class="ai-bubble">A IA analisa os seus dados reais e transforma os gastos em próximas ações.</div>
-              <div class="ai-bot"><i data-lucide="bot"></i></div>
-            </div>
-          </article>
-
-          <article class="feature-card feature-privacy">
-            <div class="feature-head">
-              <span class="feature-icon"><i data-lucide="shield-check"></i></span>
-              <div>
-                <strong>Privacidade total</strong>
-                <span>Coleta mínima, segurança e controle dos dados pelo usuário.</span>
-              </div>
-            </div>
-            <div class="privacy-preview" aria-hidden="true">
-              <div class="privacy-lock"><i data-lucide="lock-keyhole"></i><b>Privacidade total</b></div>
-              <div class="security-list">
-                <span><i data-lucide="database"></i><b>Dados criptografados</b><small>Protecao local</small></span>
-                <span><i data-lucide="user-check"></i><b>Controle total</b><small>Correção e exclusão</small></span>
-                <span><i data-lucide="shield"></i><b>Seguranca bancaria</b><small>Acesso autenticado</small></span>
-                <span><i data-lucide="server-cog"></i><b>Auditoria segura</b><small>Registros tecnicos</small></span>
-              </div>
-            </div>
-          </article>
-        </div>
       </section>
 
       <section class="app hidden" id="appPanel" hidden>
         <div class="dashboard-shell">
           <aside class="sidebar">
             <div class="sidebar-brand">
-              <span class="brand-icon brand-logo" aria-hidden="true"><svg viewBox="0 0 64 64" focusable="false"><rect width="64" height="64" rx="15"></rect><path d="M17 18H39V26H26V32H37V40H26V49H17V18Z"></path><path d="M40 18H50V26H45V49H36V26H31V18H40Z"></path></svg></span>
+              <span class="brand-icon brand-logo" aria-hidden="true">
+                <svg viewBox="0 0 64 64" focusable="false">
+                  <rect width="64" height="64" rx="15"></rect>
+                  <path d="M12 18H34V26H21V32H32V40H21V49H12V18Z"></path>
+                  <path d="M41 18H52V26H47V49H38V26H33V18H41Z"></path>
+                </svg>
+              </span>
               <div><strong>FinTrack AI</strong><span>Copiloto financeiro</span></div>
             </div>
             <nav class="side-nav" aria-label="Navegacao principal">

@@ -197,23 +197,27 @@ h2 {
   background: transparent;
   color: var(--muted);
   box-shadow: none;
+  transform: none;
 }
 
-.tab:hover {
-  transform: none;
-  box-shadow: none;
+.tab:not(.active):hover {
+  transform: translateY(-2px);
   color: #fff;
   background: linear-gradient(135deg, #10a37f, #4766d9);
-}
-
-.tab.active {
-  background: var(--panel-strong);
-  color: var(--primary-dark);
   box-shadow: 0 8px 18px rgba(28, 44, 39, .08);
 }
 
-.tab.active:hover {
+.tab:not(.active):hover span,
+.tab:not(.active):hover svg {
   color: #fff;
+}
+
+.tab.active,
+.tab.active:hover {
+  transform: none;
+  background: var(--panel-strong);
+  color: var(--primary-dark);
+  box-shadow: 0 8px 18px rgba(28, 44, 39, .08);
 }
 
 .form {
@@ -265,6 +269,7 @@ label {
   color: #33403b;
   font-weight: 800;
   font-size: 14px;
+  margin: 5px;
 }
 
 input, select {
@@ -309,8 +314,8 @@ input:focus, select:focus {
 }
 
 .password-rules {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   list-style: none;
   padding: 0;
@@ -318,11 +323,13 @@ input:focus, select:focus {
 }
 
 .password-rules li {
+  width: fit-content;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 10px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 10px !important;
+  white-space: nowrap;
 }
 
 .password-rules li.valid {
@@ -393,6 +400,7 @@ input:focus, select:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  padding: 10px;
 }
 
 .term-grid p {
@@ -413,17 +421,17 @@ input:focus, select:focus {
 }
 
 .check {
-  grid-template-columns: 22px 1fr;
-  align-items: start;
-  font-weight: 800;
+  display: flex;
+  align-items: center;
+  font-weight: 400;
   line-height: 1.4;
 }
 
 .check input {
   width: 18px;
   min-height: 18px;
-  margin-top: 2px;
   accent-color: var(--primary);
+  box-shadow: none;
 }
 
 .app {
@@ -3810,6 +3818,7 @@ body:not(.dashboard-active) #loginForm button {
 .feature-icon svg {
   width: 20px;
   height: 20px;
+  display: block;
 }
 
 .feature-head strong {
