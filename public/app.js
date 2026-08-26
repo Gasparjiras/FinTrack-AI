@@ -2256,10 +2256,25 @@ function renderMonthlyChart(key, canvasId) {
     },
     options: {
       ...chartOptions({ theme: dark ? "dark" : "light", tooltipLabel: "Valor" }),
+      responsive: true,
+      maintainAspectRatio: false,
+      devicePixelRatio: window.devicePixelRatio || 2,
+      layout: {
+        padding: {
+          top: 16,
+          bottom: 8
+        }
+      },
       plugins: {
         ...chartOptions({ theme: dark ? "dark" : "light" }).plugins,
-        legend: premiumLegend(dark),
-      },
+        legend: {
+          ...premiumLegend(dark),
+          labels: {
+            ...(premiumLegend(dark)?.labels || {}),
+            padding: 20,
+          }
+        }
+      }
     },
   });
 }
