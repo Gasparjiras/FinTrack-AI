@@ -181,68 +181,99 @@
 
           <main class="workspace-content">
             <section class="app-view active" data-page="dashboard">
+              
+              <!-- BOAS-VINDAS -->
               <div class="welcome-row">
                 <div>
                   <h2 id="welcome">Olá</h2>
                   <p>Veja como está sua vida financeira neste mês.</p>
                 </div>
               </div>
+
+              <!-- BANNER SUPERIOR DA IA -->
               <article class="assistant-hub dashboard-ai-strip">
                 <div class="assistant-avatar"><i data-lucide="sparkles"></i></div>
                 <div class="assistant-strip-copy">
                   <span>FinTrack AI</span>
-                  <p id="assistantSummary">Cadastre renda, gastos e meta para eu encontrar padrões, alertas e
-                    oportunidades de economia.</p>
+                  <p id="assistantSummary">Cadastre renda, gastos e meta para acompanhar os padrões e alertas de consumo.</p>
                 </div>
-                <div class="assistant-side">
-                  <div><span>Maior categoria</span><strong id="assistantTopCategory">Sem dados</strong></div>
-                  <div><span>Meta em destaque</span><strong id="assistantGoalHint">Cadastre uma meta</strong></div>
-                  <div><span>Leitura do mês</span><strong id="assistantMonthlyHint">Aguardando dados</strong></div>
-                </div>
-                <button data-go-view="ia" type="button"><i data-lucide="message-circle"></i><span>Ver análise
-                    completa</span></button>
+                <button data-go-view="ia" type="button">
+                  <i data-lucide="message-circle"></i>
+                  <span>Ver análise completa</span>
+                </button>
               </article>
+
+              <!-- ESTADO VAZIO (PRIMEIRO USO) -->
               <article id="starterPanel" class="starter-panel hidden" hidden>
                 <div class="starter-copy">
                   <p class="eyebrow">Primeiro uso</p>
                   <h3>Seu painel ainda está vazio.</h3>
-                  <p>Importe um extrato CSV/Excel ou cadastre uma transação manual para começar a visualizar gráficos,
-                    metas e análises.</p>
+                  <p>Importe um extrato CSV ou cadastre uma transação manual para começar a visualizar gráficos, metas e análises.</p>
                   <div class="starter-actions">
-                    <button data-go-view="gastos" type="button"><i data-lucide="upload"></i><span>Importar
-                        extrato</span></button>
-                    <button data-go-view="gastos" type="button" class="secondary"><i
-                        data-lucide="plus"></i><span>Cadastrar transação</span></button>
-                    <button data-go-view="metas" type="button" class="secondary"><i data-lucide="target"></i><span>Criar
-                        meta</span></button>
+                    <button data-go-view="gastos" type="button"><i data-lucide="upload"></i><span>Importar extrato</span></button>
+                    <button data-go-view="gastos" type="button" class="secondary"><i data-lucide="plus"></i><span>Cadastrar transação</span></button>
+                    <button data-go-view="metas" type="button" class="secondary"><i data-lucide="target"></i><span>Criar meta</span></button>
                   </div>
                 </div>
               </article>
+
+              <!-- 4 KPIS PRINCIPAIS -->
               <div class="kpi-grid dashboard-kpis">
                 <article class="kpi-card balance-card" data-go-view="gastos" tabindex="0">
-                  <div class="kpi-top"><span>Saldo disponível</span><span class="kpi-icon"><i
-                        data-lucide="wallet-cards"></i></span></div><strong id="balance">R$ 0,00</strong><small>Após
-                    gastos</small>
+                  <div class="kpi-top">
+                    <span>Saldo disponível</span>
+                    <span class="kpi-icon"><i data-lucide="wallet-cards"></i></span>
+                  </div>
+                  <strong id="balance">R$ 0,00</strong>
+                  <small>Após gastos</small>
                 </article>
+
                 <article class="kpi-card expense-card" data-go-view="gastos" tabindex="0">
-                  <div class="kpi-top"><span>Gastos do mês</span><span class="kpi-icon"><i
-                        data-lucide="receipt-text"></i></span></div><strong id="expenses">R$ 0,00</strong><small>Saídas
-                    do período</small>
+                  <div class="kpi-top">
+                    <span>Gastos do mês</span>
+                    <span class="kpi-icon"><i data-lucide="receipt-text"></i></span>
+                  </div>
+                  <strong id="expenses">R$ 0,00</strong>
+                  <small>Saídas do período</small>
                 </article>
+
                 <article class="kpi-card saved-card" data-go-view="metas" tabindex="0">
-                  <div class="kpi-top"><span>Guardado para metas</span><span class="kpi-icon"><i
-                        data-lucide="target"></i></span></div><strong id="savedGoalKpi">R$ 0,00</strong><small
-                    id="savedGoalDetail">Sem meta ativa</small>
+                  <div class="kpi-top">
+                    <span>Guardado para metas</span>
+                    <span class="kpi-icon"><i data-lucide="target"></i></span>
+                  </div>
+                  <strong id="savedGoalKpi">R$ 0,00</strong>
+                  <small id="savedGoalDetail">Sem meta ativa</small>
                 </article>
+
                 <article class="kpi-card progress-card" data-go-view="metas" tabindex="0">
-                  <div class="kpi-top"><span>Progresso da meta</span><span class="kpi-icon"><i
-                        data-lucide="gauge"></i></span></div><strong id="goalProgressKpi">0%</strong><small
-                    id="goalProgressDetail">Cadastre uma meta</small>
+                  <div class="kpi-top">
+                    <span>Progresso da meta</span>
+                    <span class="kpi-icon"><i data-lucide="gauge"></i></span>
+                  </div>
+                  <strong id="goalProgressKpi">0%</strong>
+                  <small id="goalProgressDetail">Cadastre uma meta</small>
                 </article>
               </div>
+
+              <!-- ELEMENTOS "FANTASMA" (Evitam erros de execução no JavaScript) -->
+              <div id="dashboardBudgets" style="display: none !important;"></div>
+              <div id="income" style="display: none !important;"></div>
+              <div id="remainingSafeSpend" style="display: none !important;"></div>
+              <div id="avgDailyExpense" style="display: none !important;"></div>
+              <div id="closingForecast" style="display: none !important;"></div>
+              <div id="suggestedSavingsKpi" style="display: none !important;"></div>
+              <div id="dashboardBestCard" style="display: none !important;"></div>
+              <div id="dashboardHealthScore" style="display: none !important;"></div>
+              <div id="dashboardRecurringList" style="display: none !important;"></div>
+
+              <!-- PAINEL PRINCIPAL -->
               <div class="dashboard-grid finance-board">
+
+                <!-- 1. ENTRADAS X SAÍDAS -->
                 <article class="panel panel-wide finance-chart-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="chart-column-big"></i></span>
+                  <div class="panel-head">
+                    <span class="panel-icon"><i data-lucide="chart-column-big"></i></span>
                     <div>
                       <h3>Entradas x saídas</h3>
                       <p>Fluxo do período</p>
@@ -250,8 +281,11 @@
                   </div>
                   <div class="chart-wrap dashboard-chart"><canvas id="dashboardMonthlyChart"></canvas></div>
                 </article>
+
+                <!-- 2. GASTOS POR CATEGORIA -->
                 <article class="panel category-chart-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="chart-pie"></i></span>
+                  <div class="panel-head">
+                    <span class="panel-icon"><i data-lucide="chart-pie"></i></span>
                     <div>
                       <h3>Gastos por categoria</h3>
                       <p>Distribuição do mês</p>
@@ -260,88 +294,48 @@
                   <div class="chart-wrap dashboard-chart"><canvas id="dashboardCategoryChart"></canvas></div>
                   <div id="dashboardRanking" class="ranking-list compact dashboard-donut-legend"></div>
                 </article>
-                <article class="panel panel-wide budget-board">
-                  <div class="panel-head"><span class="panel-icon ai-icon"><i data-lucide="sparkles"></i></span>
-                    <div>
-                      <h3>Sugestão por categoria</h3>
-                      <p>IA recomenda um valor mensal e compara com o gasto real</p>
-                    </div><button class="icon-button" data-go-view="categorias" type="button"
-                      title="Abrir categorias"><i data-lucide="arrow-up-right"></i></button>
-                  </div>
-                  <div id="dashboardBudgets" class="budget-list"></div>
-                </article>
-              </div>
-              <div class="dashboard-secondary-grid">
+
+                <!-- 3. META EM DESTAQUE -->
                 <article class="panel main-goal-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="goal"></i></span>
+                  <div class="panel-head">
+                    <span class="panel-icon"><i data-lucide="goal"></i></span>
                     <div>
                       <h3>Meta em destaque</h3>
                       <p>Progresso e valor sugerido</p>
-                    </div><button class="icon-button" data-go-view="metas" type="button" title="Abrir metas"><i
-                        data-lucide="arrow-up-right"></i></button>
+                    </div>
+                    <button class="icon-button" data-go-view="metas" type="button" title="Abrir metas">
+                      <i data-lucide="arrow-up-right"></i>
+                    </button>
                   </div>
-                  <div id="dashboardGoalCard" class="goal-dashboard-empty">Cadastre uma meta para acompanhar o
-                    progresso.</div>
+                  <div id="dashboardGoalCard" class="goal-dashboard-empty">Cadastre uma meta para acompanhar o progresso.</div>
                 </article>
-                <article class="panel dashboard-extra-metrics">
-                  <div>
-                    <span>Renda do mês</span>
-                    <strong id="income">R$ 0,00</strong>
-                  </div>
-                  <div>
-                    <span>Pode gastar ainda</span>
-                    <strong id="remainingSafeSpend">R$ 0,00</strong>
-                  </div>
-                  <div>
-                    <span>Gasto médio/dia</span>
-                    <strong id="avgDailyExpense">R$ 0,00</strong>
-                  </div>
-                  <div><span>Previsão de fechamento</span><strong id="closingForecast">R$ 0,00</strong></div>
-                  <div><span>Economia sugerida</span><strong id="suggestedSavingsKpi">R$ 0,00</strong></div>
-                </article>
+
+                <!-- 4. ATENÇÃO E RISCOS -->
                 <article class="panel dashboard-alert-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="triangle-alert"></i></span>
+                  <div class="panel-head">
+                    <span class="panel-icon"><i data-lucide="triangle-alert"></i></span>
                     <div>
-                      <h3>Maior risco do mês</h3>
-                      <p>O ponto que mais merece atenção.</p>
+                      <h3>Atenção e Riscos do Mês</h3>
+                      <p>Alertas de anomalias de consumo</p>
                     </div>
                   </div>
                   <div id="dashboardRiskCard" class="empty-compact">Importe dados para identificar riscos.</div>
                 </article>
-                <article class="panel dashboard-good-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="trending-up"></i></span>
-                    <div>
-                      <h3>Melhor evolução</h3>
-                      <p>Comparação contra o mês anterior.</p>
-                    </div>
-                  </div>
-                  <div id="dashboardBestCard" class="empty-compact">Aparece após dois meses com dados.</div>
-                </article>
-                <article class="panel health-score-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="heart-pulse"></i></span>
-                    <div>
-                      <h3>Saúde financeira</h3>
-                      <p>Score interno do mês</p>
-                    </div>
-                  </div>
-                  <div id="dashboardHealthScore" class="score-empty">Cadastre dados para calcular.</div>
-                </article>
-                <article class="panel recurring-card">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="repeat-2"></i></span>
-                    <div>
-                      <h3>Recorrências</h3>
-                      <p>Assinaturas e contas prováveis</p>
-                    </div>
-                  </div>
-                  <div id="dashboardRecurringList" class="recurring-list"></div>
-                </article>
+
+              </div>
+
+              <!-- ÚLTIMA LINHA: ÚLTIMOS LANÇAMENTOS -->
+              <div class="dashboard-bottom-row">
                 <article class="panel recent-panel">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="history"></i></span>
+                  <div class="panel-head">
+                    <span class="panel-icon"><i data-lucide="history"></i></span>
                     <div>
                       <h3>Últimos lançamentos</h3>
                       <p>Movimentações recentes</p>
-                    </div><button class="icon-button" data-go-view="gastos" type="button" title="Abrir gastos"><i
-                        data-lucide="arrow-up-right"></i></button>
+                    </div>
+                    <button class="icon-button" data-go-view="gastos" type="button" title="Abrir gastos">
+                      <i data-lucide="arrow-up-right"></i>
+                    </button>
                   </div>
                   <div id="recentTransactions" class="recent-list"></div>
                 </article>

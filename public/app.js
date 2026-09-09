@@ -1447,25 +1447,37 @@ function renderDashboardDecisionCards() {
 function renderAssistantHub() {
   const summary = document.querySelector("#assistantSummary");
   if (!summary || !analysis) return;
+
   const top = analysis.categories[0];
   const opportunity = (analysis.recommendations || []).find((item) => Number(item.potentialMonthlySavings || 0) > 0);
   const goal = analysis.goal;
-  const balanceText = analysis.balance >= 0
-    ? `Seu saldo está positivo em ${currency.format(analysis.balance)}.`
-    : `Você gastou ${currency.format(Math.abs(analysis.balance))} acima das entradas.`;
-  const topText = top
-    ? !isFlexibleAnalysisCategory(top.category) && opportunity
-      ? `A maior despesa é ${top.category}, mas a melhor ação prática está em ${opportunity.category}.`
-      : `A maior pressão está em ${top.category}, com ${top.share}% das despesas.`
-    : "Ainda não há gastos suficientes para identificar um padrão principal.";
-  const goalText = goal
-    ? `Para ${goal.goal_name}, guarde ${currency.format(goal.monthlyTarget)} por mês pelos próximos ${goal.monthsRemaining || goal.target_months} mês(es).`
-    : "Cadastre uma meta para transformar a análise em um plano mensal.";
-  const comparisonText = analysis.monthlyComparison?.hasPrevious ? `${analysis.monthlyComparison.summary} ` : "";
-  summary.textContent = `${comparisonText}${balanceText} ${topText} ${goalText}`;
+
+  // 1. Comparativo de Gastos
+  const comparisonText = analysis.monthlyComparison?.hasPrevious 
+    ? `${analysis.monthlyComparison.summary} ` 
+    : "";
+
+  // 2. Ação/Pressão principal
+  const actionCategory = opportunity ? opportunity.category : (top ? top.category : null);
+  const topText = actionCategory ? `Atenção em ${actionCategory}. ` : "";
+
+  // 3. Meta (com plural de meses corrigido)
+  let goalText = "";
+  if (goal) {
+    const months = Number(goal.monthsRemaining || goal.target_months || 1);
+    const monthLabel = months === 1 ? 'mês' : 'meses';
+    goalText = `Meta: guarde ${currency.format(goal.monthlyTarget)}/mês por ${months} ${monthLabel}.`;
+  }
+
+  // Define o resumo curto final no banner
+  summary.textContent = `${comparisonText}${topText}${goalText}`.trim() || 
+    "Cadastre renda, gastos e meta para acompanhar os padrões e alertas de consumo.";
+
+  // Atualiza os elementos auxiliares do hub
   const topEl = document.querySelector("#assistantTopCategory");
   const goalEl = document.querySelector("#assistantGoalHint");
   const monthEl = document.querySelector("#assistantMonthlyHint");
+
   if (topEl) topEl.textContent = top ? `${top.category} (${top.share}%)` : "Sem dados";
   if (goalEl) goalEl.textContent = goal ? `${goal.progressPercentage}% - ${goal.goal_name}` : "Cadastre uma meta";
   if (monthEl) {
