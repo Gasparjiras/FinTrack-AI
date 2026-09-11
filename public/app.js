@@ -291,14 +291,35 @@ document.querySelector("#logoutBtn").addEventListener("click", async () => {
   setHidden(authPanel, false);
 });
 
-const viewTitles = {
-  dashboard: "Dashboard",
-  gastos: "Lançamentos",
-  categorias: "Categorias",
-  metas: "Metas",
-  relatorios: "Relatórios",
-  ia: "Análise com IA",
-  configuracoes: "Configurações",
+const viewConfigs = {
+  dashboard: {
+    title: "Dashboard",
+    description: "", 
+  },
+  gastos: {
+    title: "Lançamentos",
+    description: "Gerencie suas movimentações ou importe novos extratos.",
+  },
+  categorias: {
+    title: "Categorias",
+    description: "Crie categorias simples. A IA analisa seus lançamentos e sugere quanto gastar em cada uma.",
+  },
+  metas: {
+    title: "Metas",
+    description: "Crie metas separadas, acompanhe a previsão de conclusão e escolha em qual meta cada aporte será registrado.",
+  },
+  relatorios: {
+    title: "Relatórios",
+    description: "Visualize e exporte seus dados financeiros.",
+  },
+  ia: {
+    title: "Análise com IA",
+    description: "A OpenAI só será chamada quando você clicar no botão.",
+  },
+  configuracoes: {
+    title: "Configurações",
+    description: "Privacidade, dados e conta.",
+  },
 };
 
 document.querySelectorAll("[data-view]").forEach((button) => {
@@ -323,7 +344,18 @@ function showView(view) {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
   });
-  document.querySelector("#pageTitle").textContent = viewTitles[view] || "EduFin";
+
+  const config = viewConfigs[view] || { title: "FinTrack AI", description: "" };
+  
+  const titleEl = document.querySelector("#pageTitle");
+  const descEl = document.querySelector("#pageDescription");
+
+  if (titleEl) titleEl.textContent = config.title;
+  if (descEl) {
+    descEl.textContent = config.description;
+    descEl.style.display = config.description ? "block" : "none";
+  }
+
   requestAnimationFrame(() => renderVisibleCharts(view));
   if (view === "configuracoes") loadAudit();
   if (view === "ia") loadAIHistory();
@@ -3297,3 +3329,71 @@ resetTransactionForm();
 refreshIcons();
 boot();
 
+document.addEventListener("DOMContentLoaded", () => {
+  const statementImportForm = document.querySelector("#statementImportForm");
+
+  if (statementImportForm) {
+    const fileInput = statementImportForm.querySelector('input[type="file"]');
+    const fileDrop = statementImportForm.querySelector(".file-drop");
+
+    if (fileInput && fileDrop) {
+      const strongText = fileDrop.querySelector("strong");
+      const spanText = fileDrop.querySelector("span");
+
+      const defaultTitle = strongText
+        ? strongText.textContent
+        : "Selecionar arquivo";
+      const defaultSubtitle = spanText
+        ? spanText.textContent
+        : "Arquivos CSV ou Excel. O sistema mostra uma prévia antes de salvar.";
+
+      fileInput.addEventListener("change", (e) => {
+        const file = e.target.files && e.target.files[0];
+
+        if (file) {
+          fileDrop.classList.add("has-file");
+
+          const sizeInKB = (file.size / 1024).toFixed(1);
+          const formattedSize =
+            file.size >= 1024 * 1024
+              ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+              : `${sizeInKB} KB`;
+
+          if (strongText) {
+            strongText.textContent = `📄 ${file.name}`;
+          }
+          if (spanText) {
+            spanText.textContent = `Arquivo selecionado (${formattedSize}) • Clique para trocar`;
+          }
+        } else {
+          fileDrop.classList.remove("has-file");
+          if (strongText) strongText.textContent = defaultTitle;
+          if (spanText) spanText.textContent = defaultSubtitle;
+        }
+      });
+
+      statementImportForm.addEventListener("reset", () => {
+        fileDrop.classList.remove("has-file");
+        if (strongText) strongText.textContent = defaultTitle;
+        if (spanText) spanText.textContent = defaultSubtitle;
+      });
+    }
+  }
+});
+
+function updateBulkActionsVisibility() {
+  const checkboxes = document.querySelectorAll('#transactionsBody input[type="checkbox"]:checked');
+  const bulkContainer = document.getElementById('bulkActionsGroup');
+
+  if (checkboxes.length > 0) {
+    bulkContainer.classList.remove('hidden');
+  } else {
+    bulkContainer.classList.add('hidden');
+  }
+}
+
+document.getElementById('transactionsBody').addEventListener('change', (event) => {
+  if (event.target.type === 'checkbox') {
+    updateBulkActionsVisibility();
+  }
+});

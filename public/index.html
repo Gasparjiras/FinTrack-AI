@@ -132,7 +132,7 @@
                 <path d="M41 18H52V26H47V49H38V26H33V18H41Z"></path>
               </svg>
             </span>
-            <div><strong>FinTrack AI</strong><span>Copiloto financeiro</span></div>
+            <div><strong>FinTrack AI</strong><span>Seu copiloto financeiro</span></div>
           </div>
           <nav class="side-nav" aria-label="Navegacao principal">
             <button class="nav-item active" data-view="dashboard" type="button"><i
@@ -152,7 +152,7 @@
           </nav>
           <div class="sidebar-user">
             <div class="user-avatar">PG</div>
-            <div><strong id="sidebarUserName">Usuario</strong><span id="sidebarUserEmail">email</span></div>
+            <div><strong id="sidebarUserName">Usuário</strong><span id="sidebarUserEmail">email</span></div>
           </div>
           <button id="logoutBtn" type="button" class="sidebar-logout"><i
               data-lucide="log-out"></i><span>Sair</span></button>
@@ -161,8 +161,8 @@
         <div class="workspace">
           <header class="workspace-header">
             <div>
-              <p class="eyebrow">Seu copiloto financeiro</p>
               <h1 id="pageTitle">Dashboard</h1>
+              <p id="pageDescription"></p>
             </div>
             <div class="header-actions">
               <div class="month-control" aria-label="Mês de análise">
@@ -180,6 +180,8 @@
           </header>
 
           <main class="workspace-content">
+
+            <!-- DASHBOARD -->
             <section class="app-view active" data-page="dashboard">
               
               <!-- BOAS-VINDAS -->
@@ -341,38 +343,43 @@
                 </article>
               </div>
             </section>
-
+            
+            <!-- LANÇAMENTOS -->
             <section class="app-view" data-page="gastos" hidden>
-              <div class="page-intro">
-                <div>
-                  <h2>Lançamentos</h2>
-                  <p>Cadastre transações reais ou importe um extrato CSV/Excel. Nada é salvo antes da sua confirmação.
-                  </p>
-                </div>
-              </div>
+
               <article class="panel import-panel">
                 <div class="panel-head">
                   <span class="panel-icon"><i data-lucide="cloud-upload"></i></span>
                   <div>
                     <h3>Importar extrato</h3>
-                    <p>Prioridade para CSV, XLSX e XLS. PDF continua disponível como recurso secundário.</p>
+                    <p>Envie extratos em CSV, XLSX ou XLS para processamento automático.</p>
+                  </div>
+
+                  <div class="import-example-links">
+                    <a href="examples/extrato-exemplo.csv" download>
+                      <i data-lucide="file-spreadsheet"></i> CSV de exemplo
+                    </a>
+                    <a href="examples/extrato-exemplo.xlsx" download>
+                      <i data-lucide="table"></i> Excel de exemplo
+                    </a>
                   </div>
                 </div>
+
                 <form id="statementImportForm" class="pdf-inline">
                   <label class="file-drop">
-                    <input name="statement" type="file" accept=".csv,.xlsx,.xls,.pdf,text/csv,application/pdf" required>
+                    <input name="statement" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" required>
                     <strong>Selecionar arquivo</strong>
-                    <span>CSV, Excel ou PDF. O sistema mostra uma prévia antes de salvar.</span>
+                    <span>Arquivos CSV ou Excel. O sistema mostra uma prévia antes de salvar.</span>
                   </label>
                   <button type="submit"><i data-lucide="upload"></i><span>Ler arquivo</span></button>
                 </form>
+
                 <div id="importStepper" class="import-stepper" aria-label="Etapas da importação"><span
                     class="active"><b>1</b>Arquivo</span><span><b>2</b>Mapeamento</span><span><b>3</b>Prévia</span><span><b>4</b>Correção</span><span><b>5</b>Confirmação</span>
                 </div>
-                <div class="import-example-links"><a href="examples/extrato-exemplo.csv" download><i
-                      data-lucide="file-spreadsheet"></i> CSV de exemplo</a><a href="examples/extrato-exemplo.xlsx"
-                    download><i data-lucide="table"></i> Excel de exemplo</a></div>
+
               </article>
+
               <article id="importMappingCard" class="panel hidden" hidden>
                 <div class="panel-head"><span class="panel-icon"><i data-lucide="table-properties"></i></span>
                   <div>
@@ -383,7 +390,9 @@
                 <div id="importMappingFields" class="mapping-grid"></div>
                 <div id="importStats" class="import-stats"></div>
               </article>
+
               <div class="content-grid">
+
                 <form id="transactionForm" class="panel form-panel">
                   <div class="panel-head"><span class="panel-icon"><i data-lucide="file-plus-2"></i></span>
                     <div>
@@ -391,6 +400,7 @@
                       <p>Registre renda, gastos, forma de pagamento e categoria.</p>
                     </div>
                   </div>
+
                   <input type="hidden" name="id">
                   <label>Descrição<input name="description" maxlength="120" required
                       placeholder="Ex.: Salário, mercado, aluguel"></label>
@@ -424,51 +434,104 @@
                         data-lucide="save"></i><span>Salvar</span></button><button id="cancelEditBtn" type="button"
                       class="secondary hidden" hidden>Cancelar</button></div>
                 </form>
-                <article id="transactionAiHelper" class="panel transaction-ai-helper"></article>
-                <article class="panel insight-panel">
-                  <div class="panel-head"><span class="panel-icon"><i data-lucide="scan-line"></i></span>
+
+                <div class="expense-side-stack">
+                  <article id="transactionAiHelper" class="panel transaction-ai-helper"></article>
+
+                  <article class="panel insight-panel">
+                    <div class="panel-head"><span class="panel-icon"><i data-lucide="scan-line"></i></span>
+                      <div>
+                        <h3>Resumo do mês</h3>
+                        <p>Controle rápido</p>
+                      </div>
+                    </div>
+                    <div class="mini-stats">
+                      <div><span>Maior gasto</span><strong id="largestExpense">R$ 0,00</strong></div>
+                      <div><span>Categoria principal</span><strong id="topCategory">Sem dados</strong></div>
+                      <div><span>Total de lançamentos</span><strong id="transactionCount">0</strong></div>
+                    </div>
+                  </article>
+                </div>
+
+              </div>
+
+              <article class="panel table-panel">
+                <div class="panel-head">
+
+                  <div class="panel-title-group">
+                    <span class="panel-icon">
+                      <i data-lucide="list-collapse"></i>
+                    </span>
+
                     <div>
-                      <h3>Resumo do mês</h3>
-                      <p>Controle rápido</p>
+                      <h3>Lançamentos da conta</h3>
+                      <p>Dados cadastrados manualmente ou confirmados em importações.</p>
                     </div>
                   </div>
-                  <div class="mini-stats">
-                    <div><span>Maior gasto</span><strong id="largestExpense">R$ 0,00</strong></div>
-                    <div><span>Categoria principal</span><strong id="topCategory">Sem dados</strong></div>
-                    <div><span>Total de lançamentos</span><strong id="transactionCount">0</strong></div>
+
+                  <div class="bulk-actions hidden" id="bulkActionsGroup">
+                    <label>
+                      Selecionados:
+                      <select id="bulkCategorySelect">
+                        <option value="">Alterar categoria</option>
+                      </select>
+                    </label>
+
+                    <button id="bulkApplyCategoryBtn" type="button" class="secondary">
+                      <i data-lucide="tag"></i>
+                      <span>Aplicar</span>
+                    </button>
+
+                    <button id="bulkDeleteBtn" type="button" class="secondary danger-soft">
+                      <i data-lucide="trash-2"></i>
+                      <span>Excluir</span>
+                    </button>
                   </div>
-                </article>
-              </div>
-              <article class="panel table-panel">
-                <div class="panel-head"><span class="panel-icon"><i data-lucide="list-collapse"></i></span>
-                  <div>
-                    <h3>Lançamentos da conta</h3>
-                    <p>Dados cadastrados manualmente ou confirmados em importações.</p>
-                  </div>
+
                 </div>
+
                 <div class="transaction-toolbar">
-                  <label class="search-field"><i data-lucide="search"></i><input id="transactionSearch" type="search"
-                      placeholder="Buscar por descrição, categoria ou forma"></label>
-                  <label>Tipo<select id="transactionTypeFilter">
+
+                  <label>
+                    Pesquisar
+                    <div class="search-field">
+                      <i data-lucide="search"></i>
+                      <input
+                        id="transactionSearch"
+                        type="search"
+                        placeholder="Buscar por descrição, categoria ou forma"
+                      >
+                    </div>
+                  </label>
+
+                  <label>
+                    Tipo
+                    <select id="transactionTypeFilter">
                       <option value="">Todos</option>
                       <option value="entrada">Entradas</option>
                       <option value="saida">Gastos</option>
-                    </select></label>
-                  <label>Categoria<select id="transactionCategoryFilter">
+                    </select>
+                  </label>
+
+                  <label>
+                    Categoria
+                    <select id="transactionCategoryFilter">
                       <option value="">Todas</option>
-                    </select></label>
-                  <label>Mês<input id="transactionMonthFilter" type="month"></label>
-                  <div class="bulk-actions"><label>Selecionados<select id="bulkCategorySelect">
-                        <option value="">Alterar categoria</option>
-                      </select></label><button id="bulkApplyCategoryBtn" type="button" class="secondary"><i
-                        data-lucide="tag"></i><span>Aplicar</span></button><button id="bulkDeleteBtn" type="button"
-                      class="secondary danger-soft"><i data-lucide="trash-2"></i><span>Excluir</span></button></div>
+                    </select>
+                  </label>
+
+                  <label>
+                    Mês
+                    <input id="transactionMonthFilter" type="month">
+                  </label>
+
                 </div>
+
                 <div class="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Sel.</th>
+                        <th></th>
                         <th>Data</th>
                         <th>Descrição</th>
                         <th>Categoria</th>
@@ -483,10 +546,19 @@
                     <tbody id="transactionsBody"></tbody>
                   </table>
                 </div>
-                <div class="pagination-bar"><button id="prevTransactionsPage" type="button"
-                    class="secondary">Anterior</button><span id="transactionsPageInfo">Página 1 de 1</span><button
-                    id="nextTransactionsPage" type="button" class="secondary">Próxima</button></div>
+                <div class="pagination-bar">
+                  <button id="prevTransactionsPage" type="button" class="secondary" aria-label="Página anterior">
+                    <i data-lucide="chevron-left"></i>
+                  </button>
+
+                  <span id="transactionsPageInfo">Página 1 de 1</span>
+
+                  <button id="nextTransactionsPage" type="button" class="secondary" aria-label="Próxima página">
+                    <i data-lucide="chevron-right"></i>
+                  </button>
+                </div>
               </article>
+
               <article id="importPreviewCard" class="panel hidden" hidden>
                 <div class="panel-head"><span class="panel-icon"><i data-lucide="file-check-2"></i></span>
                   <div>
@@ -515,13 +587,9 @@
               </article>
             </section>
 
+            <!-- CATEGORIAS -->
             <section class="app-view" data-page="categorias" hidden>
-              <div class="page-intro">
-                <div>
-                  <h2>Categorias inteligentes</h2>
-                  <p>Crie categorias simples. A IA analisa seus lançamentos e sugere quanto gastar em cada uma.</p>
-                </div>
-              </div>
+
               <article class="page-command-card category-command-card">
                 <span class="command-icon"><i data-lucide="sparkles"></i></span>
                 <div class="command-copy"><span>Orçamento orientado por dados</span>
@@ -558,15 +626,10 @@
               </div>
               <div id="categoriesGrid" class="category-grid"></div>
             </section>
-
+            
+            <!-- METAS -->
             <section class="app-view" data-page="metas" hidden>
-              <div class="page-intro">
-                <div>
-                  <h2>Metas financeiras</h2>
-                  <p>Crie metas separadas, acompanhe a previsão de conclusão e escolha em qual meta cada aporte será
-                    registrado.</p>
-                </div>
-              </div>
+
               <article class="page-command-card goal-command-card">
                 <span class="command-icon"><i data-lucide="target"></i></span>
                 <div class="command-copy"><span>Planejamento de objetivo</span>
@@ -678,18 +741,17 @@
               </div>
             </section>
 
+            <!-- RELATÓRIOS -->
             <section class="app-view" data-page="relatorios" hidden>
+
               <div class="page-intro">
-                <div>
-                  <h2>Relatórios</h2>
-                  <p>Visualize e exporte seus dados financeiros.</p>
-                </div>
                 <div class="page-actions"><button id="printReportBtn" type="button" class="secondary"><i
                       data-lucide="file-text"></i><span>Relatório PDF</span></button><button id="exportReportCsvBtn"
                     type="button" class="secondary"><i data-lucide="file-spreadsheet"></i><span>Exportar
                       CSV</span></button><button id="exportBtn" type="button"><i data-lucide="download"></i><span>Baixar
                       JSON</span></button></div>
               </div>
+
               <article class="page-command-card report-command-card">
                 <span class="command-icon"><i data-lucide="chart-no-axes-combined"></i></span>
                 <div class="command-copy"><span>Central de leitura financeira</span>
@@ -787,13 +849,9 @@
               </div>
             </section>
 
+            <!-- ANÁLISE COM IA -->
             <section class="app-view" data-page="ia" hidden>
-              <div class="page-intro">
-                <div>
-                  <h2>Análise com IA</h2>
-                  <p>A OpenAI só será chamada quando você clicar no botão.</p>
-                </div><span id="aiProvider" class="provider-badge">Verificando IA...</span>
-              </div>
+
               <article class="ai-hero-panel">
                 <div>
                   <p class="eyebrow">Consultor financeiro</p>
@@ -854,13 +912,9 @@
               </article>
             </section>
 
+            <!-- CONFIGURAÇÕES -->
             <section class="app-view" data-page="configuracoes" hidden>
-              <div class="page-intro">
-                <div>
-                  <h2>Configurações</h2>
-                  <p>Privacidade, dados e conta.</p>
-                </div>
-              </div>
+
               <article class="page-command-card settings-command-card">
                 <span class="command-icon"><i data-lucide="shield-check"></i></span>
                 <div class="command-copy"><span>Controle e transparência</span>

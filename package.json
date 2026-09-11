@@ -1,5 +1,5 @@
 {
-  "name": "sistema-educacao-financeira-lgpd",
+  "name": "sistema-educacao-financeira",
   "version": "1.0.0",
   "description": "Sistema de educacao financeira com consentimento LGPD, bcrypt, SQLite, auditoria e direitos do titular.",
   "main": "server.js",
