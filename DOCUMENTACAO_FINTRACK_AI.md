@@ -1,297 +1,93 @@
-# Documentacao do FinTrack AI
-
-## 1. Visao Geral
+# Escopo e regras do FinTrack AI
 
-O FinTrack AI e um aplicativo web local de educacao financeira e gestao de gastos. Ele organiza transacoes, importa extratos, categoriza gastos, acompanha metas, gera dashboards, relatorios, auditoria, controles LGPD e analise com IA.
+## Relação com a proposta do TGI
 
-A versao atual nao usa dados ficticios para preencher telas. O sistema inicia limpo e so exibe informacoes financeiras depois que o usuario cadastra ou importa seus proprios dados.
+O protótipo concentra o desenvolvimento nos componentes do short paper: cadastro de transações, classificação textual, análise de padrões, sinalização de gastos atípicos e recomendações personalizadas por objetivo. As regras locais são heurísticas sobre texto; a integração com modelo de linguagem complementa as explicações da análise, sem receber descrições de lançamentos. Reaproveitar uma correção salva não equivale a treinar um modelo supervisionado.
 
-Existe uma excecao controlada para apresentacao academica: a conta de demonstracao TCC. Ela e separada das contas comuns, possui dados ficticios identificados como demonstracao e pode ser restaurada automaticamente pelo botao "Abrir demo" na tela inicial. As demais contas continuam iniciando vazias.
+## Telas
 
-## 2. Fluxo Principal
+| Tela | Responsabilidade |
+| --- | --- |
+| Visão geral | Entradas, despesas, resultado do período, gráfico, resumo da meta e pendências |
+| Lançamentos | Importação, prévia editável, cadastro manual, edição, exclusão e busca |
+| Categorias | Categorias padrão e personalizadas; pesquisa, filtro, edição e exclusão de regras aprendidas na conta |
+| Minha meta | Uma escolha ativa com valores personalizados e acompanhamento |
+| Análise e recomendações | Resumo, padrões, alertas e até três ações para a meta |
+| Configurações | Conta, informações sobre IA, exportação e consentimento |
 
-1. O usuario cria uma conta.
-2. O usuario aceita o termo LGPD.
-3. O usuario cadastra transacoes manualmente ou importa CSV, Excel ou PDF.
-4. O sistema mostra uma previa da importacao.
-5. O usuario confirma quais transacoes serao salvas.
-6. O dashboard calcula KPIs, graficos, categorias e alertas.
-7. O usuario cria uma meta financeira.
-8. O usuario registra aportes mensais na meta e acompanha o historico.
-9. A aba de IA gera uma analise local ou chama a OpenAI, quando configurada.
-10. O usuario exporta relatorios em CSV, JSON ou formato pronto para salvar como PDF.
+Foram retirados do fluxo: PDF, múltiplas metas simultâneas, histórico de aportes, modos de intensidade, orçamento independente, pontuação financeira, fechamento mensal, análise oficial e plano obrigatório de sete dias. O banco conserva os dados antigos para compatibilidade e exportação.
 
-## 3. Telas
+## Entrada e qualidade dos dados
 
-### Home
+Data, descrição, valor e categoria são obrigatórios para persistência; Categoria pendente é aceita para permitir revisão posterior. A análise de indicadores continua disponível, mas as recomendações aguardam a revisão das categorias do período.
 
-- Logo FinTrack AI.
-- Titulo principal.
-- Subtitulo curto.
-- Botoes Criar conta e Entrar.
-- Botao Abrir demo para acessar a conta de demonstracao TCC.
-- Card de login/cadastro.
-- Beneficios resumidos: painel claro, analise com IA e privacidade.
+A prévia permite corrigir os campos antes de salvar. Depois de importar, o usuário continua podendo editar ou adicionar lançamentos. A categoria Transferência própria exclui a operação dos totais financeiros; isso evita contar movimentações entre contas como renda ou consumo. O sistema não integra contas bancárias nem transfere dinheiro.
 
-### Dashboard
+Na prévia, o usuário pode dividir qualquer lançamento em duas ou mais partes. Cada parte recebe descrição, valor e categoria próprios; todas mantêm a data e o sentido do original, com valor diferente de zero. A soma pode divergir do original quando o usuário opta por não contabilizar uma parte; a interface mostra a diferença para conferência. O servidor valida o grupo e registra um identificador derivado do lançamento original para reconhecer reimportações sem duplicar a despesa.
 
-Mostra os 4 KPIs principais:
+Ao alterar a descrição na prévia, o cliente consulta o classificador local com as regras já persistidas e atualiza a categoria sugerida, desde que o usuário não tenha escolhido uma categoria manualmente. A confirmação recalcula essa sugestão no servidor para evitar salvar uma resposta antiga. Somente a categoria escolhida manualmente cria uma regra nova após a confirmação; sugestões automáticas não são reaprendidas.
 
-- Saldo disponivel.
-- Gastos do mes.
-- Guardado para metas.
-- Progresso da meta principal.
+Na prévia de importação, uma regra local procura pares de entrada e saída com diferença de até R$ 1,00 e intervalo de zero ou um dia, sempre com a saída depois da entrada. Cada entrada participa de no máximo um par. A interface apresenta o resultado como **Possível repasse** para conferência antes de salvar; nenhuma categoria, total ou recomendação é alterada apenas por essa coincidência. Um pagamento compartilhado pode conter uma parte de despesa própria, por isso a revisão humana é necessária.
 
-Se nao houver dados, exibe estado vazio com chamada para importar extrato, cadastrar transacao ou criar meta.
+A lista permite selecionar lançamentos individualmente, por página ou até 250 resultados de todo o período/filtro atual, mesmo quando distribuídos em várias páginas. Se houver mais de 250, seleciona os primeiros pela ordenação exibida e informa que os restantes não foram incluídos. A seleção é preservada ao paginar e limpa quando busca, filtro, período ou dados são atualizados. A API limita a operação a 250 IDs, valida toda a lista antes de excluir e restringe a exclusão aos registros do usuário autenticado.
 
-### Lancamentos
+Categorias personalizadas são usadas na classificação local e aparecem nos totais da análise. As categorias padrão são fixas para preservar o vocabulário das regras. Ao renomear uma categoria personalizada, o servidor atualiza os registros e as referências. Ao excluir, os registros vão para Outros e as regras associadas são removidas.
 
-- Cadastro manual de transacoes.
-- Importacao de CSV, XLSX, XLS e PDF.
-- Mapeamento manual de colunas.
-- Inferencia de entrada/saida com base em sinal, coluna de tipo, descricao e categoria.
-- Previa antes de salvar.
-- Deteccao de duplicadas.
-- Tabela de transacoes salvas.
+O indicador de confiança da classificação local é um critério operacional de revisão, não uma probabilidade estatisticamente validada. Por isso, a interface não exibe esse número como garantia de acerto.
 
-### Categorias
+## Metas
 
-- Categorias financeiras.
-- Limite mensal definido pelo usuario.
-- Gasto atual.
-- Status dentro do limite, atencao ou acima.
-- Alerta visual com icone quando o limite e ultrapassado.
+### Reduzir gastos em uma categoria
 
-### Metas
+O usuário escolhe a categoria e um limite mensal. O sistema compara despesas registradas nessa categoria com o limite. Restante = limite menos gasto. Estar dentro do limite durante um mês parcial não significa que ele será cumprido até o fim do mês.
 
-Cada meta possui:
+### Economizar por mês
 
-- nome;
-- objetivo;
-- valor total;
-- valor ja guardado;
-- valor restante;
-- prazo;
-- guardar por mes;
-- aporte ideal atualizado conforme os meses restantes;
-- valor esperado hoje;
-- diferenca entre guardado real e plano;
-- modo leve, equilibrado ou agressivo;
-- historico de aportes agrupado por mes;
-- exclusao de aporte especifico;
-- previsao de conclusao;
-- status e mensagem motivacional.
+O usuário informa um objetivo mensal. O sistema compara entradas menos despesas com esse valor. Se não houver entradas, não conclui a capacidade de economia. O resultado registrado não comprova que o dinheiro foi guardado.
 
-### Relatorios
+### Juntar dinheiro para um objetivo
 
-- Graficos de categorias, fluxo, evolucao mensal, meta, recomendacoes e ranking.
-- Exportacao CSV dos lancamentos.
-- Relatorio PDF por impressao do navegador, com KPIs, analise, meta principal, categorias e ultimos lancamentos.
+O usuário informa total desejado, valor guardado e data final. Falta = total menos guardado. A necessidade mensal estimada é a diferença dividida pelos meses de calendário restantes, incluindo o mês analisado e o mês do prazo. Atualizar o total guardado não cria despesas.
 
-### Analise com IA
+O mês atual e o mês anterior permitem gerar recomendações com a meta atual como referência, sem reconstruir o estado histórico dela. Meses mais antigos oferecem consulta histórica dos lançamentos e indicadores, sem aplicar a meta atual ou chamar a IA.
 
-A analise considera:
+## Regras de análise
 
-- renda;
-- gastos reais;
-- categorias;
-- limites;
-- meta;
-- prazo;
-- alertas;
-- oportunidades de economia.
+- Totais consideram somente o período escolhido e excluem Transferência própria e a categoria legada Metas.
+- Um gasto pode ser sinalizado quando seu valor é pelo menos 1,8 vez a média anterior e pelo menos R$ 100. São necessárias três observações anteriores. A referência prioriza a mesma descrição; quando ela não existe, usa a categoria. O registro avaliado não entra na média.
+- Aumento mensal: despesa da categoria maior que 130% do mês anterior e diferença mínima de R$ 50. O aviso pede comparação de períodos completos.
+- Frequência: pelo menos o dobro da quantidade de registros da categoria no mês anterior, com ao menos três registros na referência.
+- Repetições da mesma descrição são apresentadas como padrões, sem serem automaticamente tratadas como anomalias.
+- A interface mostra até seis alertas. Ausência de alerta não garante ausência de comportamento atípico.
+- Categorias abrangentes e poucos registros podem gerar falsos positivos ou ocultar mudanças. Os limiares são heurísticos e precisam ser avaliados no TGI.
 
-Sem `OPENAI_API_KEY` e `OPENAI_MODEL`, o app usa analise local. Com OpenAI configurada, a chamada e feita somente ao clicar em "Analisar gastos".
+## Recomendações
 
-### Configuracoes
+O sistema calcula os indicadores e fornece recomendações locais. Opcionalmente, a API recebe esses indicadores para produzir um resumo e até três ações educativas, respeitando a meta e as limitações. O modelo não calcula saldo bancário, não executa transações e não deve inventar números ou recomendar produtos financeiros.
 
-- Direitos do titular.
-- Baixar dados em JSON.
-- Minha atividade com logs de auditoria.
-- Revogar consentimento e limpar dados financeiros.
-- Excluir conta.
+## Arquitetura
 
-## 4. Importacao de Arquivos
+- `server.js`: servidor HTTP, autenticação, SQLite, importação, categorias e integração das rotas.
+- `finance-core.js`: cálculos e regras de análise sem banco ou chamadas externas.
+- `ai-service.js`: schemas e solicitações ao provedor de IA.
+- `public/index.html`, `public/app.js`, `public/styles.css`: interface e interação.
+- `tests/`: regressões de importação, regras financeiras e integração da API.
 
-Formatos aceitos:
+O banco pode ser isolado por `FINTRACK_DATA_DIR`, usado nos testes. A aplicação padrão mantém `data/app.db`. O limite diário abrange somente análises externas, com cache vinculado a dados e modelo.
 
-- `.csv`;
-- `.xlsx`;
-- `.xls`;
-- `.pdf` como alternativa secundaria.
+O arquivo `.env` com a chave da OpenAI e o diretório `data/` com contas e lançamentos são ignorados pelo Git. Apenas `.env.example`, sem chave real, pertence ao repositório. A navegação guarda a seção aberta no endereço para mantê-la após atualizar a página.
 
-Colunas reconhecidas:
+## Validação acadêmica a realizar
 
-- Data;
-- Descricao;
-- Valor;
-- Categoria;
-- Tipo;
-- Forma de pagamento;
-- Banco ou origem.
+Os testes automatizados implementados verificam comportamento esperado, inclusive integração com um provedor simulado. Isso não substitui a avaliação quantitativa proposta no paper.
 
-Quando os nomes das colunas nao sao reconhecidos, o usuario escolhe manualmente o mapeamento antes de gerar a previa.
+Para essa avaliação:
 
-## 5. Categorizacao
+1. Montar uma base simulada rotulada, com descrições claras, abreviadas, variações de comerciantes e descrições ambíguas.
+2. Separar exemplos usados para construir regras dos exemplos usados para avaliá-las.
+3. Medir acertos sobre todas as transações e sobre as classificadas automaticamente, além da taxa encaminhada à revisão. Pendência deve ser contabilizada, não escondida como acerto.
+4. Criar históricos com alterações de valor e frequência previamente marcadas. Medir alertas corretos, falsos positivos e eventos não detectados; calcular precisão e revocação.
+5. Medir separadamente a qualidade das recomendações geradas com indicadores agregados, registrando modelo, data e limitações de repetibilidade.
+6. Verificar se as recomendações usam os dados corretos, respeitam a meta e reconhecem informações ausentes.
 
-O sistema tenta categorizar automaticamente pela descricao:
-
-- Spotify, Netflix, Disney, HBO Max: Assinaturas.
-- Uber, 99, combustivel, onibus: Transporte.
-- iFood, restaurante, padaria: Alimentacao.
-- Mercado, Atacadao, Carrefour, Assai: Mercado.
-- Farmacia, drogaria: Saude.
-- Pix recebido, salario, transferencia recebida: Receita.
-- Luz, agua, internet, celular: Contas fixas.
-
-Quando a confianca e baixa, a categoria fica como "Categoria pendente" e o usuario corrige apenas esses casos.
-
-Quando o usuario corrige uma categoria, a regra fica salva para futuras transacoes semelhantes.
-
-## 6. IA e Cache
-
-O cache da IA usa um hash mensal com:
-
-- ID do usuario;
-- mes/ano;
-- quantidade de transacoes;
-- soma de entradas;
-- soma de saidas;
-- ultima data de transacao;
-- ultima alteracao;
-- principais categorias e valores;
-- dados da meta;
-- modelo OpenAI configurado.
-
-Se qualquer dado relevante mudar, o hash muda e uma nova analise pode ser gerada. Se nada mudar, o app reutiliza o cache para reduzir custo e melhorar desempenho.
-
-## 7. LGPD
-
-O app implementa:
-
-- consentimento antes do cadastro;
-- minimizacao de dados;
-- visualizacao e correcao de dados;
-- exportacao JSON;
-- exclusao de conta;
-- revogacao de consentimento sem excluir a conta;
-- logs de auditoria visiveis ao usuario.
-
-Ao revogar o consentimento, o sistema remove:
-
-- transacoes;
-- metas;
-- regras aprendidas;
-- aportes de metas;
-- cache de IA;
-- historico de uso diario da IA.
-
-A conta permanece cadastrada, mas o painel financeiro fica bloqueado ate novo aceite.
-
-## 8. Seguranca
-
-- Senhas com bcrypt.
-- Cookie de sessao `HttpOnly` e `SameSite=Strict`.
-- Banco SQLite local.
-- Chave da OpenAI somente em variavel de ambiente.
-- Frontend nunca recebe `OPENAI_API_KEY`.
-- Arquivos importados sao processados em memoria e descartados.
-
-## 9. Como Rodar
-
-No Windows, a forma mais simples e abrir:
-
-```text
-Ligar FinTrack AI.bat
-```
-
-Ou pelo terminal:
-
-```bash
-npm install
-npm start
-```
-
-Acesse:
-
-```text
-http://localhost:3000
-```
-
-## 10. Variaveis de Ambiente
-
-```text
-OPENAI_API_KEY=sua_chave_aqui
-OPENAI_MODEL=coloque_aqui_um_modelo_real_disponivel_na_sua_conta
-OPENAI_DAILY_LIMIT=10
-```
-
-Se `OPENAI_MODEL` nao estiver configurado, o backend avisa no terminal.
-
-## 11. Apresentacao Sugerida
-
-1. Mostrar home e cadastro LGPD.
-2. Entrar no app com painel vazio.
-3. Importar um CSV/Excel preparado para teste ou uso real.
-4. Confirmar a previa.
-5. Mostrar dashboard, categorias e graficos.
-6. Criar uma meta.
-7. Registrar um aporte mensal e mostrar o historico da meta.
-8. Executar analise com IA/local.
-9. Gerar relatorio CSV ou PDF.
-10. Mostrar logs em Minha atividade.
-11. Demonstrar revogacao de consentimento.
-
-## 12. Atualizacoes desta versao
-
-### Importacao guiada
-
-- Tela passo a passo: arquivo, mapeamento, previa, correcao e confirmacao.
-- Links para arquivos de exemplo em `public/examples/extrato-exemplo.csv` e `public/examples/extrato-exemplo.xlsx`.
-- Testes com fixtures de planilha generica, Nubank e Inter.
-- A previa separa entradas, saidas, duplicadas, erros e categorias pendentes antes de salvar.
-- A importacao considera tipo, debito, credito, sinal do valor e descricao para evitar que gastos positivos virem entrada.
-
-### Lancamentos
-
-- Campo de observacao por lancamento.
-- Busca tambem considera a observacao.
-- Selecao multipla para excluir lancamentos ou aplicar categoria em massa.
-- Toda alteracao invalida o cache da IA para manter a analise atualizada.
-
-### Dashboard
-
-- KPIs clicaveis para abrir Lancamentos ou Metas.
-- Gasto medio por dia.
-- Previsao de fechamento do mes.
-- Card de maior risco do mes.
-- Card de melhor evolucao em comparacao com o mes anterior.
-
-### Metas
-
-- Varias metas ativas.
-- Meta principal selecionavel.
-- Aportes podem ser criados, editados e excluidos.
-- Cada aporte atualiza tambem o lancamento automatico de categoria `Metas`.
-- Historico de mudancas registra criacao, edicao, exclusao, meta principal e aportes.
-
-### IA e transparencia
-
-- Seletor entre analise local e OpenAI antes de analisar.
-- Botao para reanalisar lancamentos pendentes.
-- Indicador visual de uso diario da OpenAI.
-- Resumo dos dados enviados para a IA, sem arquivo bruto e sem dados desnecessarios.
-- Historico de analises geradas.
-- Uma analise pode ser marcada como oficial do mes.
-
-### Relatorios
-
-- PDF por impressao com capa, KPIs e graficos em HTML baseados nos dados reais.
-- Comparacao mensal visual lado a lado.
-- Fechamento mensal com guia de etapas.
-
-### LGPD e auditoria
-
-- Exportacao JSON inclui historico de metas e historico de analises.
-- Revogacao de consentimento limpa transacoes, metas, regras, historico de IA e fechamentos mensais.
-- Minha atividade mostra novas acoes como edicao em massa, aporte editado, meta principal e analise oficial.
+Os três cenários sintéticos de anomalia em `tests/finance-core.test.js` são regressões mínimas. Seu resultado não deve ser apresentado como desempenho geral do protótipo.

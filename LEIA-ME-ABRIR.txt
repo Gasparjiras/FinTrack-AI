@@ -1,6 +1,6 @@
 COMO ABRIR
 
-1. De dois cliques em "Abrir EduFin.bat".
+1. De dois cliques em "Abrir FinTrack AI.bat".
 2. O navegador deve abrir em http://localhost:3000.
 3. Se aparecer alerta do Windows, permita a execucao local.
 
@@ -11,8 +11,9 @@ CHAVE DA OPENAI (OPCIONAL)
 3. Abra o arquivo ".env" e preencha:
 
    OPENAI_API_KEY=sua_chave_aqui
+   OPENAI_MODEL=seu_modelo_disponivel
 
-4. Feche e abra novamente o "Abrir EduFin.bat".
+4. Feche e abra novamente o "Abrir FinTrack AI.bat".
 
 Importante:
 - A chave fica somente no backend.
@@ -21,4 +22,9 @@ Importante:
 
 Observacao:
 - Esta pasta ja inclui node_modules para nao precisar rodar npm install antes.
-- O banco fica em data/app.db e sera criado automaticamente no primeiro uso.
+- O banco fica em data/app.db e sera criado automaticamente no primeiro uso. O banco e o arquivo .env nao sao enviados ao GitHub.
+- Importacao somente por CSV, XLSX ou XLS, com previa editavel.
+- Categorias personalizadas e regras aprendidas ficam na pagina Categorias.
+- O sistema acompanha uma meta ativa e permite analise local sem chave de IA.
+- Depois de atualizar o codigo, encerre o servidor antigo e abra novamente.
+- Se esquecer a senha, encerre o servidor e abra "Redefinir Senha FinTrack.bat". Informe o e-mail e a nova senha.

@@ -1,6 +1,9 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "fintrack-parser-"));
+process.env.FINTRACK_DATA_DIR = testDirectory;
 
 const { __test } = require("../server");
 
@@ -56,3 +59,21 @@ assert.equal(manualRows.find((item) => item.description === "Pix recebido salari
 assert.ok(manualRows.find((item) => item.description === "Pix recebido salario").value > 0);
 
 console.log("Import parser fixture OK");
+assert.equal(__test.categorize("Pix Maria").category, "Categoria pendente");
+assert.equal(__test.categorize("Pix recebido João").category, "Categoria pendente");
+assert.equal(__test.categorize("Pix Restaurante Central").category, "Alimentação");
+assert.equal(__test.categorize("ARCOS DOURADOS COMERCIO DE ALIMENTOS").category, "Alimentação");
+assert.equal(__test.categorize("Pagamento no ARCOS DOURADOS ontem").category, "Alimentação");
+assert.equal(__test.categorize("Compra Arcos-Dourados loja 12").category, "Alimentação");
+assert.equal(__test.categorize("Marcos Dourados").category, "Categoria pendente");
+const arcosDescription = "Transferência enviada pelo Pix - ARCOS DOURADOS COMERCIO DE ALIMENTOS SA - 42.591.651/0001-43 - BCO SANTANDER (BRASIL) S";
+assert.equal(__test.categorize(arcosDescription).category, "Alimentação");
+assert.equal(__test.rowToImportCandidate({ Data: '2026-09-15', Descricao: arcosDescription, Valor: '-25,00' }, manualMapping, []).category, 'Alimentação');
+assert.equal(__test.rowToImportCandidate({ Data: '2026-09-15', Descricao: arcosDescription, Valor: '-25,00', Categoria: 'Categoria pendente' }, { ...manualMapping, category: 'Categoria' }, []).category, 'Alimentação');
+assert.equal(__test.categorize("Petshop Amigo", [{ merchant_pattern: "petshop amigo", category: "Pets" }]).category, "Pets");
+assert.equal(__test.categorize("Pix Maria", [{ merchant_pattern: "pix maria", category: "Compras" }]).category, "Categoria pendente");
+assert.equal(__test.rowToImportCandidate({ Data: '2026-09-01', Descricao: 'Uber reembolso', Valor: 50, Tipo: 'entrada' }, { ...manualMapping, type: 'Tipo' }).value, 50);
+assert.ok(__test.validateTransaction({ description: 'Teste', value: -5, date: '2026-02-30', category: 'Outros' }));
+__test.closeDatabase();
+if (path.dirname(path.resolve(testDirectory)) !== path.resolve(os.tmpdir()) || !path.basename(testDirectory).startsWith('fintrack-parser-')) throw new Error('Diretório de teste inesperado');
+fs.rmSync(testDirectory, { recursive: true });

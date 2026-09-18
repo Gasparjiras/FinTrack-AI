@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-title EduFin TGI - Servidor local
+title FinTrack AI - Servidor local
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js nao encontrado. Instale o Node.js ou rode em uma maquina com Node instalado.
@@ -12,6 +12,6 @@ if not exist node_modules (
   npm install
 )
 start "" "http://localhost:3000"
-echo EduFin aberto em http://localhost:3000
+echo FinTrack AI aberto em http://localhost:3000
 node server.js
 pause
