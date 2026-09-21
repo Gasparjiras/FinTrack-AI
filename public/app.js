@@ -52,9 +52,32 @@ function showView(view, updateUrl = true) {
   if (view === 'dashboard') renderChart();
   if (updateUrl && location.hash !== `#${viewHashes[view]}`) location.hash = viewHashes[view];
 }
+function setMobileMenu(open) {
+  $('#appSidebar').classList.toggle('open', open);
+  $('#sidebarBackdrop').classList.toggle('visible', open);
+  $('#mobileMenuButton').setAttribute('aria-expanded', String(open));
+  $('#mobileMenuButton').setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+  document.body.classList.toggle('mobile-menu-open', open);
+  if (open) $('#sidebarCloseButton').focus();
+}
+$('#mobileMenuButton').addEventListener('click', () => setMobileMenu(!$('#appSidebar').classList.contains('open')));
+$('#sidebarCloseButton').addEventListener('click', () => setMobileMenu(false));
+$('#sidebarBackdrop').addEventListener('click', () => setMobileMenu(false));
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && $('#appSidebar').classList.contains('open')) {
+    setMobileMenu(false);
+    $('#mobileMenuButton').focus();
+  }
+});
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-view]');
-  if (button) showView(button.dataset.view);
+  if (button) {
+    showView(button.dataset.view);
+    if (matchMedia('(max-width: 700px)').matches) setMobileMenu(false);
+  }
+});
+window.addEventListener('resize', () => {
+  if (!matchMedia('(max-width: 700px)').matches && $('#appSidebar').classList.contains('open')) setMobileMenu(false);
 });
 window.addEventListener('hashchange', () => {
   if (!$('#appPanel').hidden && state.view !== viewFromHash()) showView(viewFromHash(), false);
@@ -70,12 +93,20 @@ on('#registerForm', 'submit', async event => {
   await api('/api/register', { method: 'POST', body: JSON.stringify({ ...data, consentAccepted: Boolean(data.consentAccepted) }) }); await boot();
 });
 on('#demoLoginBtn', 'click', async () => { await api('/api/demo/login', { method: 'POST', body: '{}' }); await boot(); });
-on('#logoutBtn', 'click', async () => { await api('/api/logout', { method: 'POST', body: '{}' }); location.reload(); });
+on('#logoutBtn', 'click', async () => {
+  if (!confirm('Deseja realmente sair da sua conta?')) return;
+  await api('/api/logout', { method: 'POST', body: '{}' });
+  location.reload();
+});
 
 async function boot() {
   const me = await api('/api/me');
   state.consent = me.consentAccepted;
   $('#userName').textContent = me.user.name;
+  $('#userName').title = me.user.name;
+  $('#userEmail').textContent = me.user.email;
+  $('#userEmail').title = me.user.email;
+  $('#userInitials').textContent = String(me.user.name || me.user.email || '?').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   $('#demoBadge').hidden = !me.user.is_demo;
   $('#authPanel').hidden = true; $('#appPanel').hidden = false;
   $('#consentNotice').hidden = state.consent;
@@ -106,9 +137,15 @@ async function refresh() {
   const wasGenerated = generated;
   Object.assign(state, { transactions, categories, categoryRules, plannedInstallments, goal: goals.goal, analysis });
   selectedTransactionIds.clear();
-  generated = false;
+  generated = Boolean(analysis.savedAnalysis);
   $('#analysisMethod').open = false;
-  $('#analysisFreshness').textContent = analysis.periodStatus === 'historical' ? 'Consulta histórica atualizada com os lançamentos disponíveis.' : wasGenerated ? 'Dados ou período atualizados. Gere novamente as recomendações.' : 'Indicadores atualizados. Gere a análise depois de revisar os registros e escolher uma meta.';
+  $('#analysisFreshness').textContent = analysis.periodStatus === 'historical'
+    ? 'Consulta histórica atualizada com os lançamentos disponíveis.'
+    : analysis.savedAnalysis?.stale
+      ? 'A última análise continua disponível, mas existem alterações posteriores. Gere novamente para atualizar as recomendações.'
+      : analysis.savedAnalysis
+        ? 'A última análise ainda corresponde aos lançamentos, à meta, às parcelas e ao modelo atuais.'
+        : wasGenerated ? 'Dados ou período atualizados. Gere novamente as recomendações.' : 'Indicadores atualizados. Gere a análise depois de revisar os registros e escolher uma meta.';
   syncPeriodControls();
   renderCategories(); renderCategoryRules(); renderTransactions(); fillGoal(); renderOverview(); renderAnalysis(); updateGate();
 }
@@ -467,10 +504,15 @@ function updateImportConfirmation() {
   }
   const invalidPlans = selected.map((item, index) => !validPreviewPlan(item) ? imported.candidates.indexOf(item) + 1 : null).filter(Boolean);
   if (invalidPlans.length) reasons.push(`Revise as parcelas do(s) registro(s) ${invalidPlans.join(', ')}: a parcela atual não pode passar do total (até 36), e o valor mensal deve ser positivo, com até duas casas decimais. Use uma despesa que não seja transferência própria ou meta.`);
-  const summary = `${imported.candidates.length} registro(s) na prévia · ${selected.filter(item => item.category === 'Categoria pendente').length} pendente(s) de categoria · ${imported.candidates.filter(item => item.duplicate).length} possível(is) duplicado(s).`;
+  const pendingCount = selected.filter(item => item.category === 'Categoria pendente').length;
+  const duplicateCount = imported.candidates.filter(item => item.duplicate).length;
+  const summary = `${imported.candidates.length} registro(s) na prévia · ${pendingCount} pendente(s) de categoria · ${duplicateCount} possível(is) duplicado(s).`;
   const importErrors = (imported.errors || []).map(item => `Linha ${item.row}: ${item.message}`).join(' ');
   const reasonText = reasons.length ? `Não é possível confirmar: ${reasons.join(' ')}` : `${selected.length} lançamento(s) selecionado(s). Pronto para confirmar.`;
-  $('#importNotice').textContent = [summary, importErrors, reasons.length ? reasonText : ''].filter(Boolean).join(' ');
+  $('#importNotice').textContent = summary;
+  $('#importNotice').classList.toggle('has-warnings', pendingCount > 0 || duplicateCount > 0 || Boolean(importErrors));
+  $('#importReviewAlerts').textContent = importErrors;
+  $('#importReviewAlerts').hidden = !importErrors;
   $('#importConfirmStatus').textContent = reasonText;
   $('#importConfirmStatus').classList.toggle('blocked', Boolean(reasons.length));
   $('#confirmImportBtn').disabled = Boolean(reasons.length);
@@ -496,7 +538,7 @@ function renderPreview() {
     const planButton = item.installmentPlan || Number(item.value) < 0 && !['Transferência própria', 'Metas'].includes(item.category) ? `<button type="button" class="secondary" data-plan="${index}">${item.installmentPlan ? 'Remover parcelas' : 'Parcelas'}</button>` : '';
     const plan = item.installmentPlan;
     const planEditor = plan ? `<tr class="installment-editor" data-plan-index="${index}"><td colspan="7"><strong>Parcelamento deste lançamento</strong><div class="installment-fields"><label>Parcela atual<input type="number" min="1" max="36" step="1" data-plan-field="currentNumber" value="${plan.currentNumber}"></label><label>Total de parcelas<input type="number" min="2" max="36" step="1" data-plan-field="total" value="${plan.total}"></label><label>Valor mensal das próximas parcelas (R$)<input type="number" min="0.01" step="0.01" data-plan-field="monthlyAmount" value="${plan.monthlyAmount}"></label></div><small>Se esta for a última parcela, ela será registrada como realizada e nenhuma previsão nova será criada. As demais parcelas serão previstas e poderão ser vinculadas a extratos já salvos ou futuros.</small></td></tr>` : '';
-    return `${groupHeader}<tr data-index="${index}" class="${item.category === 'Categoria pendente' ? 'pending' : ''} ${item.splitOriginal ? 'split-part' : ''}"><td><input type="checkbox" data-field="selected" aria-label="Incluir registro ${index + 1}" ${item.selected ? 'checked' : ''}></td><td><input type="date" data-field="date" aria-label="Data do registro ${index + 1}" value="${escapeHtml(item.date)}" required ${item.splitOriginal ? 'disabled' : ''}></td><td><div class="review-description-scroll" tabindex="0" aria-label="Descrição do registro ${index + 1} com rolagem horizontal"><input data-field="description" aria-label="Descrição do registro ${index + 1}" value="${escapeHtml(item.description)}" style="width:${Math.max(25, Math.min(120, String(item.description).length))}ch" maxlength="120" required></div></td><td><input type="number" step="0.01" data-field="value" aria-label="Valor do registro ${index + 1}" value="${item.value}" required></td><td><select data-field="category" aria-label="Categoria do registro ${index + 1}">${categoryOptions(item.category)}</select></td><td data-preview-status><span data-preview-base-status>${status}</span>${item.duplicate && item.includeDuplicate ? '<small class="review-included">Incluído após revisão</small>' : ''}${plan ? `<small class="review-included">Parcela ${plan.currentNumber}/${plan.total}</small>` : ''}<small class="possible-repasse" data-preview-pass-through hidden></small>${planSelect}</td><td><button type="button" class="secondary" data-split="${index}" ${Math.abs(Math.round(item.value * 100)) < 2 ? 'disabled' : ''}>Dividir</button>${planButton}<button type="button" class="secondary" data-restore="${index}" ${reviewChanged(item) ? '' : 'disabled'}>Desfazer alterações</button>${firstPart ? `<button type="button" class="secondary" data-unsplit="${index}">Desfazer divisão</button>` : ''}</td></tr>${planEditor}`;
+    return `${groupHeader}<tr data-index="${index}" class="${item.category === 'Categoria pendente' ? 'pending' : ''} ${item.splitOriginal ? 'split-part' : ''}"><td><input type="checkbox" data-field="selected" aria-label="Incluir registro ${index + 1}" ${item.selected ? 'checked' : ''}></td><td><input type="date" data-field="date" aria-label="Data do registro ${index + 1}" value="${escapeHtml(item.date)}" required ${item.splitOriginal ? 'disabled' : ''}></td><td><input data-field="description" aria-label="Descrição do registro ${index + 1}" title="${escapeHtml(item.description)}" value="${escapeHtml(item.description)}" maxlength="120" required></td><td><input type="number" step="0.01" data-field="value" aria-label="Valor do registro ${index + 1}" value="${item.value}" required></td><td><select data-field="category" aria-label="Categoria do registro ${index + 1}">${categoryOptions(item.category)}</select></td><td data-preview-status><span data-preview-base-status>${status}</span>${item.duplicate && item.includeDuplicate ? '<small class="review-included">Incluído após revisão</small>' : ''}${plan ? `<small class="review-included">Parcela ${plan.currentNumber}/${plan.total}</small>` : ''}<small class="possible-repasse" data-preview-pass-through hidden></small>${planSelect}</td><td><button type="button" class="secondary" data-split="${index}" ${Math.abs(Math.round(item.value * 100)) < 2 ? 'disabled' : ''}>Dividir</button>${planButton}<button type="button" class="secondary" data-restore="${index}" ${reviewChanged(item) ? '' : 'disabled'}>Desfazer alterações</button>${firstPart ? `<button type="button" class="secondary" data-unsplit="${index}">Desfazer divisão</button>` : ''}</td></tr>${planEditor}`;
   }).join('');
   refreshSplitTotals();
   refreshPreviewPassThroughs();
@@ -536,7 +578,6 @@ $('#importBody').addEventListener('input', event => {
     return;
   }
   if (event.target.dataset.field !== 'description') return;
-  event.target.style.width = `${Math.max(25, Math.min(120, event.target.value.length))}ch`;
   const row = event.target.closest('[data-index]');
   const item = imported.candidates[Number(row.dataset.index)];
   item.description = event.target.value;
@@ -732,11 +773,8 @@ function installmentCandidates(item) {
       Math.abs(Date.parse(`${a.date}T00:00:00Z`) - due) - Math.abs(Date.parse(`${b.date}T00:00:00Z`) - due)).slice(0, 100);
 }
 function forecastItemHtml(item) {
-  const candidates = installmentCandidates(item);
-  const candidateOptions = candidates.map(transaction => `<option value="${transaction.id}">${escapeHtml(transaction.date.split('-').reverse().join('/'))} · ${escapeHtml(transaction.description)} · ${money(transaction.value)}</option>`).join('');
   const cancel = `<button type="button" class="secondary" data-cancel-installment="${item.id}" aria-label="Cancelar previsão da parcela ${item.installment_number} de ${item.installment_total}">Cancelar previsão</button>`;
-  const link = candidates.length ? `<div class="forecast-link"><select data-link-target="${item.id}" aria-label="Lançamento realizado para a parcela ${item.installment_number} de ${item.installment_total}"><option value="">Escolha um lançamento já salvo</option>${candidateOptions}</select><button type="button" class="secondary" data-link-installment="${item.id}">Vincular</button></div>` : '<small>Nenhuma despesa salva próxima dessa data para vincular.</small>';
-  return `<div class="forecast-item"><span>${escapeHtml(item.due_date.split('-').reverse().join('/'))} · ${escapeHtml(item.category)} · ${item.installment_number}/${item.installment_total}</span><strong>${money(item.amount)}</strong>${cancel}${link}</div>`;
+  return `<div class="forecast-item"><span>${escapeHtml(item.due_date.split('-').reverse().join('/'))} · ${escapeHtml(item.category)} · ${item.installment_number}/${item.installment_total}</span><strong>${money(item.amount)}</strong>${cancel}</div>`;
 }
 function confirmationRowHtml(item) {
   const candidates = installmentCandidates(item);
@@ -772,6 +810,9 @@ async function handleInstallmentAction(event) {
     const installmentId = linkButton.dataset.linkInstallment;
     const transactionId = $(`[data-link-target="${installmentId}"]`).value;
     if (!transactionId) throw new Error('Escolha o lançamento realizado para vincular.');
+    const installment = state.plannedInstallments.find(item => Number(item.id) === Number(installmentId));
+    const installmentLabel = installment ? ` à parcela ${installment.installment_number}/${installment.installment_total}` : ' à parcela prevista';
+    if (!confirm(`Vincular o lançamento selecionado${installmentLabel}? Confira se ele corresponde ao pagamento realizado.`)) return;
     await api(`/api/installments/${installmentId}/link`, { method: 'POST', body: JSON.stringify({ transactionId: Number(transactionId) }) });
     await refresh();
     toast('Parcela vinculada ao lançamento realizado.');
@@ -800,19 +841,53 @@ function updateGate() {
   $('#analyzeBtn').hidden = historical;
   if (historical) {
     $('#analysisGate').textContent = 'Consulta histórica: confira totais, categorias e comparação mensal. Recomendações e IA ficam disponíveis para o mês atual ou anterior.';
+    $('#analysisGate').className = 'analysis-gate info';
     $('#analyzeBtn').disabled = true;
     return;
   }
   const reason = !a?.transactionCount ? 'Adicione lançamentos ao período.' : !state.goal ? 'Escolha uma meta para gerar recomendações.' : a.pendingCount ? `Revise ${a.pendingCount} categoria(s) pendente(s) antes de gerar recomendações.` : '';
   $('#analysisGate').textContent = reason || 'Pronto para analisar os dados e a meta.';
+  $('#analysisGate').className = `analysis-gate ${reason ? 'warning' : 'ready'}`;
   $('#analyzeBtn').disabled = Boolean(reason);
 }
 function block(title, items, empty) {
   return `<article class="card analysis-block"><h2>${title}</h2>${items.length ? `<ul>${items.map(item => `<li>${item.title ? `<strong>${escapeHtml(item.title)}</strong>` : ''}${escapeHtml(item.message || item)}</li>`).join('')}</ul>` : `<p>${empty}</p>`}</article>`;
 }
+function analysisReadingItems(summary) {
+  return String(summary || '').split(/;\s+|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/u).map(item => item.trim()).filter(Boolean);
+}
+function analysisSummaryBlock(a, historical) {
+  const resultTone = a.balance < 0 ? 'negative' : a.balance > 0 ? 'positive' : 'neutral';
+  const resultDetail = a.balance < 0 ? 'As despesas superaram as entradas.' : a.balance > 0 ? 'As entradas superaram as despesas.' : 'Entradas e despesas ficaram equilibradas.';
+  const context = (a.insights || []).map(item => `<p><span aria-hidden="true">i</span>${escapeHtml(item)}</p>`).join('');
+  const reading = analysisReadingItems(a.ai?.executiveSummary);
+  return `<article class="card analysis-block analysis-summary"><h2>${historical ? 'Resumo histórico' : 'Resumo do período'}</h2>
+    <div class="analysis-summary-kpis">
+      <div><span>Entradas</span><strong>${money(a.totalIncome)}</strong></div>
+      <div><span>Despesas</span><strong>${money(a.totalExpenses)}</strong></div>
+      <div class="analysis-summary-result ${resultTone}"><span>Resultado</span><strong>${money(a.balance)}</strong><small>${resultDetail}</small></div>
+    </div>
+    ${reading.length ? `<section class="analysis-reading"><h3>Leitura do período</h3><ul>${reading.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>` : ''}
+    ${context ? `<section class="analysis-context"><h3>Contexto dos dados</h3><div>${context}</div></section>` : ''}
+  </article>`;
+}
+function lastAnalysisHtml(saved, analysis) {
+  if (!saved) return '';
+  const generatedAt = new Date(`${String(saved.createdAt).replace(' ', 'T')}Z`);
+  const generatedLabel = Number.isNaN(generatedAt.getTime()) ? saved.createdAt : generatedAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  const source = saved.source === 'openai' ? `IA${saved.model ? ` · ${saved.model}` : ''}` : 'Regras locais';
+  const goalName = analysis.goal?.goal_name || 'Meta não informada';
+  return `<article class="card last-analysis-card ${saved.stale ? 'is-stale' : 'is-current'}">
+    <div class="last-analysis-heading"><div><h2>Última análise gerada</h2><p>${saved.stale ? 'Existem alterações posteriores a este resultado.' : 'Este resultado corresponde aos dados atuais.'}</p></div><span>${saved.stale ? 'Desatualizada' : 'Atualizada'}</span></div>
+    <dl><div><dt>Período</dt><dd>${escapeHtml(monthLabel(saved.month))}</dd></div><div><dt>Gerada em</dt><dd>${escapeHtml(generatedLabel)}</dd></div><div><dt>Origem</dt><dd>${escapeHtml(source)}</dd></div><div><dt>Meta considerada</dt><dd>${escapeHtml(goalName)}</dd></div></dl>
+    ${saved.stale ? '<p class="last-analysis-warning"><span aria-hidden="true">!</span><span>A análise permanece disponível para consulta. Gere uma nova antes de tomar as recomendações como atuais.</span></p>' : ''}
+  </article>`;
+}
 function renderAnalysis() {
-  const a = state.analysis; if (!a) return;
-  const historical = a.periodStatus === 'historical';
+  const current = state.analysis; if (!current) return;
+  const saved = current.savedAnalysis;
+  const a = saved?.result || current;
+  const historical = current.periodStatus === 'historical';
   $('#analysisTitle').textContent = `${historical ? 'Histórico' : 'Análise'} de ${monthLabel(state.month)}`;
   $('#analysisPeriodNote').textContent = historical
     ? 'Mês histórico: consulte os registros e compare com o mês anterior. A meta atual e as parcelas previstas hoje não são aplicadas a esse período.'
@@ -830,7 +905,7 @@ function renderAnalysis() {
   if (a.monthlyComparison) patterns.push({ title: 'Comparação mensal', message: a.monthlyComparison.summary });
   const recommendations = generated ? a.ai?.recommendations || a.recommendations : [];
   const forecast = (a.upcomingInstallments?.months || []).filter(item => item.count).map(item => ({ title: `${item.month.slice(5)}/${item.month.slice(0, 4)}`, message: `${money(item.total)} em ${item.count} parcela(s) previstas. Não entram nas despesas realizadas.` }));
-  $('#analysisResult').innerHTML = block(historical ? 'Resumo histórico' : 'Resumo do período', [`Entradas: ${money(a.totalIncome)}. Despesas: ${money(a.totalExpenses)}. Resultado: ${money(a.balance)}.`, ...(a.ai?.executiveSummary ? [a.ai.executiveSummary] : []), ...a.insights], '') + block('Padrões de consumo', patterns, 'Sem despesas suficientes para identificar padrões.') + (historical ? '' : block('Parcelas previstas a partir de hoje', forecast, 'Nenhuma parcela prevista para os próximos três meses.')) + block('Pontos de atenção', a.anomalies, 'Nenhum gasto atípico sinalizado pelas regras com os dados disponíveis.') + (historical ? '' : block('Recomendações para sua meta', recommendations, 'Revise os lançamentos, escolha uma meta e clique em Gerar análise.'));
+  $('#analysisResult').innerHTML = lastAnalysisHtml(saved, a) + analysisSummaryBlock(a, historical) + block('Padrões de consumo', patterns, 'Sem despesas suficientes para identificar padrões.') + (historical ? '' : block('Parcelas previstas a partir de hoje', forecast, 'Nenhuma parcela prevista para os próximos três meses.')) + block('Pontos de atenção', a.anomalies, 'Nenhum gasto atípico sinalizado pelas regras com os dados disponíveis.') + (historical ? '' : block('Recomendações para sua meta', recommendations, 'Revise os lançamentos, escolha uma meta e clique em Gerar análise.'));
 }
 on('#analyzeBtn', 'click', async () => {
   if (state.analysis?.periodStatus === 'historical') return;
@@ -848,12 +923,12 @@ on('#exportBtn', 'click', async () => {
   const a = document.createElement('a'); a.href = url; a.download = 'meus-dados-fintrack.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 on('#revokeConsentBtn', 'click', async () => {
-  if (!confirm('Revogar o consentimento e apagar seus dados financeiros? A conta será mantida.')) return;
+  if (!confirm('Revogar o consentimento e apagar os dados financeiros e as cópias locais do banco? Seu nome, e-mail, senha protegida, histórico do consentimento e registros técnicos serão mantidos para preservar a conta.')) return;
   await api('/api/consent/revoke', { method: 'POST', body: '{}' }); location.reload();
 });
 on('#acceptConsentBtn', 'click', async () => { await api('/api/consent/accept', { method: 'POST', body: '{}' }); await boot(); });
 on('#deleteAccountForm', 'submit', async event => {
-  if (!confirm('Excluir permanentemente sua conta e todos os dados?')) return;
+  if (!confirm('Excluir permanentemente sua conta, seus dados financeiros e as cópias locais do banco? Esta ação não pode ser desfeita.')) return;
   await api('/api/account', { method: 'DELETE', body: JSON.stringify(formData(event.target)) }); location.reload();
 });
 boot().catch(() => { $('#authPanel').hidden = false; $('#appPanel').hidden = true; });

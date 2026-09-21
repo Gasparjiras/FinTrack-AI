@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 const bcrypt = require("bcryptjs");
 const { analyze, validDate } = require("./finance-core");
+const { categorizeFromDictionary } = require("./category-dictionary");
 const XLSX = require("xlsx");
 
 const ENV_PATH = path.join(__dirname, ".env");
@@ -27,6 +28,8 @@ const DB_PATH = path.join(DATA_DIR, "app.db");
 const CERT_PATH = path.join(ROOT, "certs", "localhost-cert.pem");
 const KEY_PATH = path.join(ROOT, "certs", "localhost-key.pem");
 const sessions = new Map();
+const CONSENT_VERSION = "1.1";
+const BACKUP_RETENTION_DAYS = 7;
 const OPENAI_DAILY_LIMIT = Math.max(1, Number(process.env.OPENAI_DAILY_LIMIT || 10));
 const formatBRL = value => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const ALLOWED_CATEGORIES = [
@@ -51,6 +54,7 @@ backupLocalDatabase();
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON");
 db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA secure_delete = ON");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,15 +262,31 @@ function ensureColumn(table, column, definition) {
 }
 
 function backupLocalDatabase() {
+  const backupDir = path.join(DATA_DIR, "backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const expiration = Date.now() - BACKUP_RETENTION_DAYS * 86400000;
+  for (const entry of fs.readdirSync(backupDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !/^app-\d{4}-\d{2}-\d{2}\.db$/.test(entry.name)) continue;
+    const backupPath = path.join(backupDir, entry.name);
+    if (fs.statSync(backupPath).mtimeMs < expiration) fs.rmSync(backupPath, { force: true });
+  }
   if (!fs.existsSync(DB_PATH)) return;
   const stats = fs.statSync(DB_PATH);
   if (!stats.size) return;
-  const backupDir = path.join(DATA_DIR, "backups");
-  fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
   const backupPath = path.join(backupDir, `app-${stamp}.db`);
   if (!fs.existsSync(backupPath)) {
     fs.copyFileSync(DB_PATH, backupPath);
+  }
+}
+
+function clearLocalBackups() {
+  const backupDir = path.join(DATA_DIR, "backups");
+  if (!fs.existsSync(backupDir)) return;
+  for (const entry of fs.readdirSync(backupDir, { withFileTypes: true })) {
+    if (entry.isFile() && /^app-\d{4}-\d{2}-\d{2}\.db$/.test(entry.name)) {
+      fs.rmSync(path.join(backupDir, entry.name), { force: true });
+    }
   }
 }
 
@@ -291,6 +311,7 @@ ensureColumn("transactions", "external_id", "TEXT");
 ensureColumn("transactions", "note", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("transactions", "installment_number", "INTEGER");
 ensureColumn("transactions", "installment_total", "INTEGER");
+ensureColumn("ai_analysis_history", "fingerprint", "TEXT");
 
 const legacyGoals = db.prepare("SELECT * FROM user_goals").all();
 for (const goal of legacyGoals) {
@@ -314,30 +335,19 @@ for (const goal of legacyGoals) {
   }
 }
 
-const term = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get("1.0");
+const term = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get(CONSENT_VERSION);
 if (!term) {
   db.prepare(`
     INSERT INTO consent_terms (version, collected_data, purpose, storage, retention)
     VALUES (?, ?, ?, ?, ?)
   `).run(
-    "1.0",
-    "Descrição, valor, data, categoria, forma de pagamento e status das transações; nome, e-mail, preferências da meta e regras de categorização aprendidas.",
-    "Organizar finanças, processar extratos enviados pelo usuário, classificar transações e gerar um plano educativo personalizado.",
-    "Banco SQLite local; arquivos processados em memória e classificados por regras locais. A análise opcional por IA envia totais, categorias, dados da meta e indicadores agregados, sem descrições individuais.",
-    "Enquanto a conta existir ou até o usuário solicitar exclusão completa."
+    CONSENT_VERSION,
+    "Nome, e-mail e hash da senha; descrição, observação, valor, data, categoria, forma de pagamento, status e parcelamento dos lançamentos; categorias personalizadas, regras aprendidas e dados da meta; endereço IP, datas, horários e ações registradas para segurança e auditoria.",
+    "Identificar a conta, organizar os registros financeiros, processar extratos enviados pelo usuário, classificar lançamentos e gerar análises e recomendações educativas.",
+    "Banco SQLite no computador em que esta instalação local é executada; arquivos processados em memória e classificados por regras locais. A IA opcional usa a API da OpenAI e envia totais, categorias, dados da meta e indicadores agregados, sem descrições individuais, arquivo bruto ou senha.",
+    "Dados financeiros permanecem até a revogação ou exclusão da conta. Revogar mantém nome, e-mail, hash da senha, histórico de consentimento e registros técnicos necessários à conta local. Excluir a conta remove os dados do banco ativo e as cópias locais do banco. Dados enviados opcionalmente à OpenAI seguem os prazos do provedor."
   );
 }
-db.prepare(`
-  UPDATE consent_terms
-  SET collected_data = ?, purpose = ?, storage = ?, retention = ?
-  WHERE version = ?
-`).run(
-  "Descrição, valor, data, categoria, forma de pagamento e status das transações; nome, e-mail, preferências da meta e regras de categorização aprendidas.",
-  "Organizar finanças, processar extratos enviados pelo usuário, classificar transações e gerar um plano educativo personalizado.",
-  "Banco SQLite local; arquivos importados são processados em memória e classificados por regras locais. Quando solicitada, a análise por IA envia totais, indicadores, categorias e dados da meta, sem descrições individuais. O arquivo bruto não é enviado.",
-  "Enquanto a conta existir, até a revogação do consentimento ou até a exclusão completa solicitada pelo titular.",
-  "1.0"
-);
 
 try {
   fs.chmodSync(DB_PATH, 0o600);
@@ -523,17 +533,9 @@ function detectPlannerMonth(matrix) {
 
 function spreadsheetCategoryToAllowed(value, description = "") {
   const category = normalizeColumnName(value);
-  const text = normalizeColumnName(`${value} ${description}`);
-  if (/locomocao|transporte|gasolina|moto|corrida/.test(text)) return "Transporte";
-  if (/comida|lanche|ifood|restaurante|\barcos dourados\b|sorvete|doce|mercado|chocolate|cafe|pao|padaria/.test(text)) return /mercado/.test(text) ? "Mercado" : "Alimentação";
-  if (/conta|internet|celular|agua|energia|fixo/.test(text)) return "Contas fixas";
-  if (/estudo|faculdade|curso|api tgi|educacao/.test(text)) return "Educação";
-  if (/saude|dentista|farmacia|consulta/.test(text)) return "Saúde";
-  if (/assinatura|spotify|crunchyroll|netflix|disney|hbo/.test(text)) return "Assinaturas";
-  if (/lazer|cinema|festa|show/.test(text)) return "Lazer";
-  if (/eletronico|roupa|presente|beleza|tenis|monitor|celular|brinquedo/.test(text)) return "Compras";
-  if (/receita|salario|vr|vt|freelance|restante/.test(text)) return "Receita";
   if (ALLOWED_CATEGORIES.includes(value)) return value;
+  const match = categorizeFromDictionary(`${value} ${description}`);
+  if (match) return match.category;
   return category ? "Outros" : "";
 }
 
@@ -1062,7 +1064,7 @@ function seedDemoAccount(userId, req) {
   try {
     clearDemoAccountData(userId);
     ensureDefaultCategories(userId);
-    const latestTerm = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get("1.0");
+    const latestTerm = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get(CONSENT_VERSION);
     db.prepare("INSERT INTO user_consents (user_id, term_id) VALUES (?, ?)").run(userId, latestTerm.id);
 
     const insertTransaction = db.prepare(`
@@ -1134,7 +1136,7 @@ function seedDemoAccount(userId, req) {
     ].forEach(([pattern, category]) => insertRule.run(userId, pattern, category));
 
     audit(userId, "DEMO_ACCOUNT_READY", { message: "Conta de demonstração TCC recriada com dados fictícios.", month: currentMonth }, req);
-    audit(userId, "CONSENT_ACCEPTED", { termVersion: "1.0", demo: true }, req);
+    audit(userId, "CONSENT_ACCEPTED", { termVersion: CONSENT_VERSION, demo: true }, req);
     audit(userId, "IMPORT_CONFIRMED", { source: "Demonstração TCC", transactions: demoTransactions.length }, req);
 
     db.exec("COMMIT");
@@ -1325,22 +1327,8 @@ function categorize(description, learnedRules = []) {
       return { category: rule.category, confidence: "aprendida", merchant: rule.merchant_pattern };
     }
   }
-  const mappings = [
-    ["Assinaturas", /spotify|netflix|hbo max|hbomax|disney plus|disney|prime video|amazon prime|globoplay|deezer|youtube premium|apple music|paramount|crunchyroll|assinatura|mensalidade app/],
-    ["Transporte", /\buber\b|99app|\b99\b|taxi|combustivel|gasolina|\bposto\b|shell|ipiranga|petrobras|metro|onibus|estacionamento|sem parar|pedagio|ipva|licenciamento|seguro da moto|seguro moto|seguro auto|oficina|mecanica|borracharia/],
-    ["Alimentação", /ifood|rappi|restaurante|lanchonete|mcdonald|\barcos dourados\b|burger king|padaria|cafeteria|delivery|pizzaria|churrascaria|lanche|pastelaria|sorveteria|acai/],
-    ["Mercado", /supermercado|\bmercado\b(?!\s+livre)|pao de acucar|atacadao|carrefour|assai|\bextra\b|hortifruti|sams club|dia brasil|mercearia|sacolao|atacado|mini mercado/],
-    ["Lazer", /cinema|cinemark|ingresso|steam|playstation|xbox|parque|teatro|\bshow\b|\bbar\b|boliche|festa|evento|hotel|viagem/],
-    ["Contas fixas", /aluguel|condominio|energia|enel|cemig|light|sabesp|saneamento|conta de agua|internet|vivo fibra|claro net|\bclaro\b|\btim\b|\boi\b|telefone|celular|plano celular/],
-    ["Compras", /mercado livre|shopee|magazine luiza|magalu|casas bahia|renner|riachuelo|centauro|lojas americanas|amazon marketplace|\bamazon\b|shein|temu|aliexpress|shopping|shopp|loja/],
-    ["Saúde", /farmacia|drogaria|drogasil|droga raia|pague menos|hospital|clinica|laboratorio|consulta|medico|dentista|plano de saude|exame/],
-    ["Educação", /curso|udemy|alura|escola|faculdade|universidade|livraria|\blivro\b|mensalidade escolar|ead|anhanguera|unopar|cruzeiro do sul|estacio/],
-    ["Receita", /salario|credito recebido|estorno|reembolso|rendimento|provento/],
-    ["Outros", /tarifa|juros|multa|imposto|iof/],
-  ];
-  for (const [category, pattern] of mappings) {
-    if (pattern.test(text)) return { category, confidence: "alta", merchant: merchantPattern(description) };
-  }
+  const dictionaryMatch = categorizeFromDictionary(description);
+  if (dictionaryMatch) return { category: dictionaryMatch.category, confidence: "alta", merchant: merchantPattern(description) };
   return { category: "Categoria pendente", confidence: "baixa", merchant: merchantPattern(description) };
 }
 
@@ -1555,7 +1543,39 @@ function summarizeOpenAIRequest(analysis) {
 }
 
 function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, goal, analysisMonth, upcoming) {
-  return crypto.createHash("sha256").update(JSON.stringify({ version: 4, userId, model: OPENAI_MODEL, transactions, goal, analysisMonth, upcoming })).digest("hex");
+  return crypto.createHash("sha256").update(JSON.stringify({ version: 6, userId, model: OPENAI_MODEL, transactions, goal, analysisMonth, upcoming })).digest("hex");
+}
+
+function latestSavedAnalysis(userId, month, currentFingerprint) {
+  const row = db.prepare(`
+    SELECT month, source, model, summary, response_json, fingerprint, created_at
+    FROM ai_analysis_history
+    WHERE user_id = ? AND month = ?
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(userId, month);
+  if (!row) return null;
+  const result = safeJson(row.response_json);
+  if (!result) return null;
+  return {
+    month: row.month,
+    source: row.source,
+    model: row.model,
+    summary: row.summary,
+    createdAt: row.created_at,
+    stale: !row.fingerprint || row.fingerprint !== currentFingerprint,
+    result,
+  };
+}
+
+function saveAnalysisHistory(userId, month, fingerprint, analysis, requestSummary) {
+  const source = analysis.ai ? "openai" : "local";
+  const model = analysis.ai ? analysis.aiStatus?.model || OPENAI_MODEL : null;
+  const summary = analysis.ai?.executiveSummary || `Entradas ${formatBRL(analysis.totalIncome)}, despesas ${formatBRL(analysis.totalExpenses)} e resultado ${formatBRL(analysis.balance)}.`;
+  db.prepare(`
+    INSERT INTO ai_analysis_history (user_id, month, source, model, summary, request_json, response_json, is_official, fingerprint)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+  `).run(userId, month, source, model, summary, JSON.stringify(requestSummary || {}), JSON.stringify(analysis), fingerprint);
 }
 
 function validateTransaction(input) {
@@ -1607,7 +1627,7 @@ function hasConsent(userId) {
       AND uc.revoked_at IS NULL
     ORDER BY uc.accepted_at DESC
     LIMIT 1
-  `).get(userId, "1.0"));
+  `).get(userId, CONSENT_VERSION));
 }
 
 function revokeConsentAndClearData(userId, req) {
@@ -1637,6 +1657,8 @@ function revokeConsentAndClearData(userId, req) {
     db.exec("ROLLBACK");
     throw error;
   }
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  clearLocalBackups();
 }
 
 function serveStatic(req, res) {
@@ -1680,11 +1702,11 @@ async function handleApi(req, res) {
 
       const passwordHash = await bcrypt.hash(password, 12);
       const result = db.prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)").run(name, email, passwordHash);
-      const latestTerm = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get("1.0");
+      const latestTerm = db.prepare("SELECT id FROM consent_terms WHERE version = ?").get(CONSENT_VERSION);
       db.prepare("INSERT INTO user_consents (user_id, term_id) VALUES (?, ?)").run(result.lastInsertRowid, latestTerm.id);
       ensureDefaultCategories(result.lastInsertRowid);
-      audit(result.lastInsertRowid, "USER_REGISTERED", { termVersion: "1.0" }, req);
-      audit(result.lastInsertRowid, "CONSENT_ACCEPTED", { termVersion: "1.0" }, req);
+      audit(result.lastInsertRowid, "USER_REGISTERED", { termVersion: CONSENT_VERSION }, req);
+      audit(result.lastInsertRowid, "CONSENT_ACCEPTED", { termVersion: CONSENT_VERSION }, req);
       const token = createSession(result.lastInsertRowid);
       return send(res, 201, { ok: true }, { "Set-Cookie": cookieHeader(token, req) });
     }
@@ -1727,14 +1749,14 @@ async function handleApi(req, res) {
     }
 
     if (req.method === "GET" && url.pathname === "/api/term") {
-      const latest = db.prepare("SELECT * FROM consent_terms WHERE version = ?").get("1.0");
+      const latest = db.prepare("SELECT * FROM consent_terms WHERE version = ?").get(CONSENT_VERSION);
       return send(res, 200, latest);
     }
 
     if (req.method === "POST" && url.pathname === "/api/consent/accept") {
       const user = requireUser(req, res);
       if (!user) return;
-      const latestTerm = db.prepare("SELECT id, version FROM consent_terms WHERE version = ?").get("1.0");
+      const latestTerm = db.prepare("SELECT id, version FROM consent_terms WHERE version = ?").get(CONSENT_VERSION);
       db.prepare("INSERT INTO user_consents (user_id, term_id) VALUES (?, ?)").run(user.id, latestTerm.id);
       audit(user.id, "CONSENT_ACCEPTED", { termVersion: latestTerm.version, reaccepted: true }, req);
       return send(res, 200, { ok: true, consentAccepted: true });
@@ -2000,7 +2022,6 @@ async function handleApi(req, res) {
       const goal = goals[0] || null;
 
       const selectedRows = filterTransactionsForMonth(rows, selectedMonth);
-      audit(user.id, "AI_ANALYSIS_REQUESTED", { month: selectedMonth, transactions: selectedRows.length }, req);
       const budgets = getCategoryBudgets(user.id, selectedMonth);
       const localAnalysis = buildFinancialAnalysis(rows, periodStatus === "historical" ? null : goal, budgets, { month: selectedMonth });
       localAnalysis.periodStatus = periodStatus;
@@ -2009,6 +2030,7 @@ async function handleApi(req, res) {
       if (periodStatus !== "historical" && nextMonth.total > 0) localAnalysis.recommendations.push({ title: "Parcelas do próximo mês", message: `${formatBRL(nextMonth.total)} em ${nextMonth.count} parcela(s) previstas para ${nextMonth.month}. Planeje esse compromisso; previsão não é gasto realizado.` });
 
       const useOpenAI = url.searchParams.get("useAI") === "1";
+      const shouldSave = url.searchParams.has("useAI") && periodStatus !== "historical" && Boolean(goal) && !localAnalysis.pendingCount && localAnalysis.transactionCount > 0;
       const forceRefresh = url.searchParams.get("refreshAI") === "1";
 
       const requestSummary = periodStatus === "historical" ? null : summarizeOpenAIRequest(localAnalysis);
@@ -2016,18 +2038,24 @@ async function handleApi(req, res) {
         ? await getPersonalizedAIPlan(user.id, rows, goal, localAnalysis, { forceRefresh })
         : { plan: null, source: "local", model: null, cached: false, warning: null };
 
-      return send(res, 200, {
+      const analysisResponse = {
         ...localAnalysis,
         ai: aiResult.plan,
         openAIRequestSummary: requestSummary,
-
         aiStatus: {
           source: aiResult.source,
           model: aiResult.model,
           cached: aiResult.cached,
           warning: aiResult.warning,
         },
-      });
+      };
+      const fingerprint = generateFinancialAnalysisHash(user.id, rows, localAnalysis.categoryBudgets, localAnalysis.goals || goal, selectedMonth, localAnalysis.upcomingInstallments);
+      if (shouldSave) {
+        saveAnalysisHistory(user.id, selectedMonth, fingerprint, analysisResponse, requestSummary);
+        audit(user.id, "ANALYSIS_GENERATED", { month: selectedMonth, source: analysisResponse.ai ? "openai" : "local", transactions: selectedRows.length }, req);
+      }
+      analysisResponse.savedAnalysis = latestSavedAnalysis(user.id, selectedMonth, fingerprint);
+      return send(res, 200, analysisResponse);
     }
 
     if (req.method === "POST" && url.pathname === "/api/import/file") {
@@ -2315,6 +2343,8 @@ async function handleApi(req, res) {
       const token = parseCookies(req).session;
       db.prepare("DELETE FROM audit_logs WHERE user_id = ?").run(user.id);
       db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      clearLocalBackups();
       if (token) sessions.delete(token);
       return send(res, 200, { ok: true }, { "Set-Cookie": "session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/" });
     }

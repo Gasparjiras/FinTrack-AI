@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --check server.js && node --check ai-service.js && node --check public/app.js && node tests/import-parser.test.js && node tests/finance-core.test.js && node tests/api.test.js"
+    "test": "node --check server.js && node --check ai-service.js && node --check category-dictionary.js && node --check public/app.js && node tests/import-parser.test.js && node tests/finance-core.test.js && node tests/api.test.js"
   },
   "keywords": [],
   "author": "",

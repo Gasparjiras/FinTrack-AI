@@ -17,6 +17,8 @@ O protótipo concentra o desenvolvimento nos componentes do short paper: cadastr
 
 Foram retirados do fluxo: PDF, múltiplas metas simultâneas, histórico de aportes, modos de intensidade, orçamento independente, pontuação financeira, fechamento mensal, análise oficial e plano obrigatório de sete dias. O banco conserva os dados antigos para compatibilidade e exportação.
 
+A última análise gerada para cada mês é persistida em `ai_analysis_history` e restaurada após um novo login. Cada registro guarda o resultado, período, origem, modelo, data, meta considerada e a impressão digital dos dados usados. Uma mudança em lançamentos, meta, parcelas ou modelo não apaga o resultado anterior: a interface o identifica como desatualizado e solicita nova geração.
+
 ## Entrada e qualidade dos dados
 
 Data, descrição, valor e categoria são obrigatórios para persistência; Categoria pendente é aceita para permitir revisão posterior. A análise de indicadores continua disponível, mas as recomendações aguardam a revisão das categorias do período.
@@ -32,6 +34,8 @@ Na prévia de importação, uma regra local procura pares de entrada e saída co
 A lista permite selecionar lançamentos individualmente, por página ou até 250 resultados de todo o período/filtro atual, mesmo quando distribuídos em várias páginas. Se houver mais de 250, seleciona os primeiros pela ordenação exibida e informa que os restantes não foram incluídos. A seleção é preservada ao paginar e limpa quando busca, filtro, período ou dados são atualizados. A API limita a operação a 250 IDs, valida toda a lista antes de excluir e restringe a exclusão aos registros do usuário autenticado.
 
 Categorias personalizadas são usadas na classificação local e aparecem nos totais da análise. As categorias padrão são fixas para preservar o vocabulário das regras. Ao renomear uma categoria personalizada, o servidor atualiza os registros e as referências. Ao excluir, os registros vão para Outros e as regras associadas são removidas.
+
+As regras padrão ficam centralizadas em `category-dictionary.js`. Cada categoria registra termos normalizados, fontes usadas para orientar a taxonomia e ambiguidades que podem provocar falsos positivos. Visa MCC e Open Finance Brasil são referências conceituais; o vocabulário de descrições brasileiras é uma adaptação do projeto validada por testes. Exceções explícitas distinguem, por exemplo, Mercado Livre de mercado, posto de saúde de posto de combustível e consulta jurídica de consulta médica. Termos são comparados como palavras ou expressões completas, ignorando acentos e diferenças entre maiúsculas e minúsculas.
 
 O indicador de confiança da classificação local é um critério operacional de revisão, não uma probabilidade estatisticamente validada. Por isso, a interface não exibe esse número como garantia de acerto.
 
@@ -69,6 +73,7 @@ O sistema calcula os indicadores e fornece recomendações locais. Opcionalmente
 
 - `server.js`: servidor HTTP, autenticação, SQLite, importação, categorias e integração das rotas.
 - `finance-core.js`: cálculos e regras de análise sem banco ou chamadas externas.
+- `category-dictionary.js`: dicionário brasileiro controlado e documentação de ambiguidades da classificação local.
 - `ai-service.js`: schemas e solicitações ao provedor de IA.
 - `public/index.html`, `public/app.js`, `public/styles.css`: interface e interação.
 - `tests/`: regressões de importação, regras financeiras e integração da API.
@@ -76,6 +81,10 @@ O sistema calcula os indicadores e fornece recomendações locais. Opcionalmente
 O banco pode ser isolado por `FINTRACK_DATA_DIR`, usado nos testes. A aplicação padrão mantém `data/app.db`. O limite diário abrange somente análises externas, com cache vinculado a dados e modelo.
 
 O arquivo `.env` com a chave da OpenAI e o diretório `data/` com contas e lançamentos são ignorados pelo Git. Apenas `.env.example`, sem chave real, pertence ao repositório. A navegação guarda a seção aberta no endereço para mantê-la após atualizar a página.
+
+O protótipo é executado localmente. O banco SQLite fica no computador que executa a aplicação e utiliza exclusão segura. Uma cópia diária é mantida em `data/backups` por até sete dias. Cópias vencidas são removidas na inicialização; revogar o consentimento ou excluir uma conta apaga as cópias locais e trunca o log de escrita para evitar que dados removidos continuem nessas estruturas.
+
+O termo de uso dos dados é imutável por versão. A versão `1.1` acrescenta registros técnicos de segurança, localização do armazenamento, retenção das cópias, efeitos distintos de revogação e exclusão e o processamento opcional pela OpenAI. Usuários de versões anteriores precisam aceitar o termo vigente para continuar usando os recursos financeiros. A interface informa que exportações JSON contêm dados pessoais e financeiros.
 
 ## Validação acadêmica a realizar
 

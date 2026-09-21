@@ -56,7 +56,7 @@ async function generateFinancialPlan(context) {
   } };
   return structuredResponse("financial_education", schema, [
     "Você explica padrões financeiros em português brasileiro de forma educativa e concisa.",
-    "Retorne um resumo curto e até três recomendações ligadas à meta escolhida. Use apenas números e indicadores fornecidos.",
+    "Retorne um resumo executivo com duas ou três frases independentes e até três recomendações ligadas à meta escolhida. Cada frase do resumo deve expressar uma ideia completa; não use ponto e vírgula. Interprete o resultado e a situação da meta sem enumerar novamente todos os campos do contexto ou amontoar números. Quando um valor for indispensável, formate-o em reais no padrão brasileiro.",
     "Os cálculos, alertas e valores da meta já foram determinados pelo sistema; não invente outros nem contradiga os existentes.",
     "Parcelas futuras são previsões, não gastos realizados. Ao citá-las, diferencie compromissos previstos dos lançamentos do período.",
     "Se faltarem entradas, não conclua a capacidade de economia. Saldo do período não comprova dinheiro guardado.",

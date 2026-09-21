@@ -63,6 +63,8 @@ Na Visão geral, as setas percorrem os meses entre o primeiro com lançamentos e
 
 Recomendações são liberadas após escolher uma meta e resolver as categorias pendentes do período. Alterar registros, categorias, meta ou período descarta as recomendações exibidas e exige nova geração.
 
+A última análise gerada de cada período fica salva no banco local e volta a aparecer depois de sair e entrar. A interface informa o período, a data, a origem, o modelo de IA quando aplicável e a meta considerada. Se lançamentos, meta, parcelas previstas ou modelo mudarem, o resultado anterior continua disponível para consulta com o selo **Desatualizada** até que uma nova análise seja gerada.
+
 ## IA opcional
 
 Copie `.env.example` para `.env` e configure a chave e o modelo disponível na sua conta:
@@ -75,7 +77,7 @@ OPENAI_DAILY_LIMIT=10
 
 Sem configuração, o protótipo usa regras locais para a análise. A interface identifica a origem das recomendações. Falhas da API mantêm a alternativa local.
 
-A classificação de lançamentos usa palavras-chave e regras aprendidas com correções do usuário, sem chamada à API. Esse aprendizado reutiliza padrões corrigidos; não treina um modelo de machine learning.
+A classificação de lançamentos usa o dicionário brasileiro controlado em `category-dictionary.js` e regras aprendidas com correções do usuário, sem chamada à API. O dicionário mantém termos e estabelecimentos por categoria, a origem conceitual e observações sobre possíveis falsos positivos. Visa MCC e Open Finance orientam a taxonomia; os termos são uma adaptação revisada do projeto, não uma lista oficial dessas fontes. Esse aprendizado reutiliza padrões corrigidos; não treina um modelo de machine learning.
 
 A geração opcional de recomendações recebe totais, categorias, dados da meta, contagens e valores agregados de padrões e contagens de alertas. Descrições individuais, nomes de destinatários de Pix, senhas e arquivos brutos não são enviados. Totais financeiros ainda podem ser dados pessoais associados à conta. A validação automatizada dessa integração usa uma API simulada, sem consumir créditos.
 
@@ -84,6 +86,10 @@ A geração opcional de recomendações recebe totais, categorias, dados da meta
 O banco padrão permanece em `data/app.db`. A atualização acrescenta campos de categoria-alvo e prazo da meta sem apagar transações. Metas antigas continuam legíveis como objetivos de acumulação; a meta principal é usada no novo fluxo. Outras metas e históricos legados continuam disponíveis na exportação dos dados, sem ocupar a interface principal.
 
 O arquivo `.env`, o diretório `data/` (incluindo contas e lançamentos) e `node_modules/` são locais e ignorados pelo Git. `.env.example` contém apenas campos de exemplo. Não copie chaves, senhas ou extratos reais para arquivos do repositório.
+
+Esta versão foi projetada para execução local. Os dados ficam no banco SQLite do computador que executa o FinTrack. O sistema mantém uma cópia diária do banco por até sete dias; cópias vencidas são removidas ao iniciar, e revogar o consentimento ou excluir uma conta remove as cópias locais imediatamente para que elas não conservem os dados apagados. O SQLite usa exclusão segura e o log de escrita é truncado após essas operações.
+
+O termo de uso dos dados é versionado. A versão `1.1` informa os dados financeiros e técnicos registrados, a retenção local, os controles do usuário e o uso opcional da API da OpenAI. Contas que aceitaram uma versão anterior precisam aceitar a versão atual antes de voltar a usar os recursos financeiros. Alterações futuras relevantes devem criar uma nova versão, preservando o texto das versões anteriores.
 
 Antigos lançamentos na categoria Metas são preservados, mas excluídos dos totais de consumo. Campos e tabelas antigos são mantidos para compatibilidade; não há uma migração destrutiva.
 

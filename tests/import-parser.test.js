@@ -6,6 +6,7 @@ const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "fintrack-parser-"))
 process.env.FINTRACK_DATA_DIR = testDirectory;
 
 const { __test } = require("../server");
+const { CATEGORY_DICTIONARY, categorizeFromDictionary } = require("../category-dictionary");
 
 const fixturePath = path.join(__dirname, "fixtures", "extrato-generico.csv");
 const parsed = __test.importTransactionsFromCSV(fs.readFileSync(fixturePath));
@@ -62,6 +63,15 @@ console.log("Import parser fixture OK");
 assert.equal(__test.categorize("Pix Maria").category, "Categoria pendente");
 assert.equal(__test.categorize("Pix recebido João").category, "Categoria pendente");
 assert.equal(__test.categorize("Pix Restaurante Central").category, "Alimentação");
+assert.equal(__test.categorize("Compra de remédio").category, "Saúde");
+assert.equal(__test.categorize("Compra de medicamento").category, "Saúde");
+assert.equal(__test.categorize("Pagamento Droga").category, "Saúde");
+assert.equal(__test.categorize("Posto de saúde municipal").category, "Saúde");
+assert.equal(__test.categorize("Posto Shell").category, "Transporte");
+assert.equal(__test.categorize("Consulta jurídica").category, "Categoria pendente");
+assert.equal(__test.categorize("Clínica veterinária").category, "Categoria pendente");
+assert.equal(__test.categorize("Mercado Livre").category, "Compras");
+assert.equal(__test.categorize("Mercado do bairro").category, "Mercado");
 assert.equal(__test.categorize("ARCOS DOURADOS COMERCIO DE ALIMENTOS").category, "Alimentação");
 assert.equal(__test.categorize("Pagamento no ARCOS DOURADOS ontem").category, "Alimentação");
 assert.equal(__test.categorize("Compra Arcos-Dourados loja 12").category, "Alimentação");
@@ -72,6 +82,8 @@ assert.equal(__test.rowToImportCandidate({ Data: '2026-09-15', Descricao: arcosD
 assert.equal(__test.rowToImportCandidate({ Data: '2026-09-15', Descricao: arcosDescription, Valor: '-25,00', Categoria: 'Categoria pendente' }, { ...manualMapping, category: 'Categoria' }, []).category, 'Alimentação');
 assert.equal(__test.categorize("Petshop Amigo", [{ merchant_pattern: "petshop amigo", category: "Pets" }]).category, "Pets");
 assert.equal(__test.categorize("Pix Maria", [{ merchant_pattern: "pix maria", category: "Compras" }]).category, "Categoria pendente");
+assert.ok(CATEGORY_DICTIONARY.every(entry => entry.origin.length && entry.falsePositiveNotes.length), "Toda categoria padrão deve documentar origem e risco de falso positivo");
+assert.equal(categorizeFromDictionary("REMÉDIO FARMÁCIA").category, "Saúde");
 assert.equal(__test.rowToImportCandidate({ Data: '2026-09-01', Descricao: 'Uber reembolso', Valor: 50, Tipo: 'entrada' }, { ...manualMapping, type: 'Tipo' }).value, 50);
 assert.ok(__test.validateTransaction({ description: 'Teste', value: -5, date: '2026-02-30', category: 'Outros' }));
 __test.closeDatabase();

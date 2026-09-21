@@ -17,32 +17,29 @@
   </div>
   <main class="auth-layout" id="authPanel">
    <section class="intro">
-    <a class="brand" href="/">
+    <div class="brand" aria-label="FinTrack AI">
      FinTrack
      <span>
       AI
      </span>
-    </a>
-    <p class="eyebrow">
-     Educação financeira
-    </p>
+    </div>
     <h1>
      Entenda seus gastos.
      <br/>
      Planeje seu próximo passo.
     </h1>
     <p>
-     Organize seus lançamentos, escolha uma meta e descubra o que seus hábitos dizem sobre suas finanças.
+     Organize seus lançamentos, acompanhe suas metas e receba recomendações baseadas nos seus hábitos financeiros.
     </p>
     <ol>
      <li>
-      Importe seu CSV ou planilha.
+      Importe seu extrato em CSV ou planilha.
      </li>
      <li>
-      Revise as categorias sugeridas.
+      Revise e organize as categorias sugeridas.
      </li>
      <li>
-      Receba uma análise para sua meta.
+      Receba análises e recomendações para sua meta.
      </li>
     </ol>
    </section>
@@ -98,9 +95,16 @@
       <summary>
        Como seus dados são utilizados
       </summary>
-      <p>
-       Nome e e-mail identificam a conta. Lançamentos, categorias e meta são armazenados no banco local para organização e análise. Arquivos são processados em memória e classificados por regras locais. Ao solicitar a análise com IA, são enviados totais, indicadores, categorias e dados da meta, sem descrições individuais dos lançamentos. O arquivo bruto e a senha não são enviados. Você pode exportar os dados, revogar o consentimento ou excluir a conta nas configurações.
-      </p>
+      <ul class="privacy-summary">
+       <li><strong>Responsável:</strong> nesta versão acadêmica e local, quem executa e administra esta instalação do FinTrack controla o armazenamento dos dados.</li>
+       <li><strong>Conta e segurança:</strong> nome e e-mail identificam você; a senha é armazenada somente como hash protegido. Endereço IP, datas, horários e ações podem ser registrados para segurança e auditoria.</li>
+       <li><strong>Dados financeiros:</strong> lançamentos, observações, parcelas previstas, categorias personalizadas, regras aprendidas e meta ficam no banco SQLite do computador em que o FinTrack está sendo executado.</li>
+       <li><strong>Importação e classificação:</strong> o arquivo é processado em memória e as descrições são classificadas por regras locais. O arquivo bruto não é armazenado nem enviado à IA.</li>
+       <li><strong>IA opcional:</strong> somente quando você marcar essa opção e gerar recomendações, totais, categorias, indicadores agregados e dados da meta são enviados à API da OpenAI, um fornecedor externo que pode processá-los fora do Brasil. Descrições individuais, arquivo bruto e senha não são enviados. A OpenAI informa que o conteúdo da API não é usado para treinamento por padrão e que logs de monitoramento podem ser mantidos por até 30 dias.</li>
+       <li><strong>Prazo e cópias locais:</strong> cópias de segurança do banco são mantidas por até 7 dias. Revogar o consentimento apaga os dados financeiros e essas cópias, mas mantém os dados necessários para acessar a conta. Excluir a conta remove também os dados de identificação e as cópias locais.</li>
+       <li><strong>Seus controles:</strong> nas Configurações, você pode acessar e exportar seus dados, corrigir registros, revogar o consentimento e limpar os dados financeiros ou excluir completamente a conta.</li>
+       <li><strong>Escolha:</strong> sem aceitar este termo, não é possível criar uma conta nem utilizar os recursos financeiros. A demonstração com dados fictícios continua disponível.</li>
+      </ul>
      </details>
      <label class="check">
       <input name="consentAccepted" required="" type="checkbox"/>
@@ -124,13 +128,23 @@
    </section>
   </main>
   <div class="app-layout" hidden="" id="appPanel">
-   <aside class="sidebar">
-    <a class="brand" href="/">
-     FinTrack
-     <span>
-      AI
-     </span>
-    </a>
+   <header class="mobile-app-header">
+    <a class="brand" href="/">FinTrack <span>AI</span></a>
+    <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-controls="appSidebar" aria-expanded="false" aria-label="Abrir menu">
+     <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+   </header>
+   <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Fechar menu" tabindex="-1"></button>
+   <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-header">
+     <a class="brand" href="/">
+      FinTrack
+      <span>AI</span>
+     </a>
+     <button class="sidebar-close" id="sidebarCloseButton" type="button" aria-label="Fechar menu">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+     </button>
+    </div>
     <p class="eyebrow">
      Seu dinheiro, com clareza
     </p>
@@ -152,28 +166,30 @@
      </button>
     </nav>
     <div class="sidebar-bottom">
-     <span id="userName">
-     </span>
-     <small hidden="" id="demoBadge">
-      Dados simulados • demonstração
-     </small>
-     <button class="secondary" data-view="configuracoes">
-      Configurações
+     <div class="sidebar-profile">
+      <span class="sidebar-avatar" id="userInitials" aria-hidden="true"></span>
+      <div class="sidebar-profile-text">
+       <strong id="userName"></strong>
+       <small id="userEmail"></small>
+       <small hidden="" id="demoBadge">Dados simulados • demonstração</small>
+      </div>
+     </div>
+     <button class="secondary sidebar-action" data-view="configuracoes">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      <span>Configurações</span>
      </button>
-     <button class="text-button" id="logoutBtn">
-      Sair
+     <button class="text-button sidebar-action" id="logoutBtn">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>
+      <span>Sair</span>
      </button>
     </div>
    </aside>
    <main class="workspace">
-    <header class="page-header">
-     <div>
-      <p class="eyebrow">
-       FinTrack AI
-      </p>
-      <h1 id="pageTitle">
-       Visão geral
-      </h1>
+      <header class="page-header">
+       <div>
+        <h1 id="pageTitle">
+         Visão geral
+        </h1>
      </div>
      <div class="overview-month-nav" id="overviewMonthNav" role="group" aria-label="Mês da visão geral">
       <button type="button" class="secondary icon-button" id="overviewPrevMonth" aria-label="Ir para o mês anterior" title="Mês anterior">
@@ -186,7 +202,7 @@
      </div>
     </header>
     <p class="notice" hidden="" id="consentNotice">
-     Seu consentimento está revogado. Aceite novamente em Configurações para usar os dados financeiros.
+     O termo de uso dos dados precisa ser aceito ou atualizado. Consulte as informações em Configurações para usar os recursos financeiros.
     </p>
     <section data-page="dashboard">
      <p class="page-intro">
@@ -254,14 +270,15 @@
      <p class="page-intro">
       Importe, confira e mantenha seus registros organizados.
      </p>
-     <aside class="notice">
-      <strong>
-       Revise seus lançamentos antes de gerar a análise.
-      </strong>
-      A classificação automática pode precisar de ajustes, principalmente em descrições genéricas, como Pix e transferências. Você pode corrigir categorias, editar informações e adicionar lançamentos que não estejam no arquivo.
-     </aside>
-     <div class="two-columns">
-      <article class="card">
+     <div class="two-columns transaction-entry-grid">
+      <div class="transaction-import-column">
+       <aside class="notice">
+        <strong>
+         Revise seus lançamentos antes de gerar a análise.
+        </strong>
+        A classificação automática pode precisar de ajustes, principalmente em descrições genéricas, como Pix e transferências. Você pode corrigir categorias, editar informações e adicionar lançamentos que não estejam no arquivo.
+       </aside>
+       <article class="card">
        <h2>
         Importar extrato
        </h2>
@@ -280,16 +297,18 @@
          Ler arquivo
         </button>
        </form>
-       <p>
-        <a download="" href="examples/extrato-exemplo.csv">
-         Modelo CSV
+       <div class="import-example-links" aria-label="Modelos de extrato para download">
+        <a class="import-example-link" download="" href="examples/extrato-exemplo.csv">
+         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+         <span>Modelo CSV</span>
         </a>
-        ·
-        <a download="" href="examples/extrato-exemplo.xlsx">
-         Modelo de planilha
+        <a class="import-example-link" download="" href="examples/extrato-exemplo.xlsx">
+         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+         <span>Modelo de planilha</span>
         </a>
-       </p>
-      </article>
+       </div>
+       </article>
+      </div>
       <article class="card">
        <h2 id="transactionTitle">
         Novo lançamento
@@ -374,9 +393,12 @@
         </button>
        </form>
       </details>
-      <aside class="import-observations" aria-labelledby="importObservationsTitle">
-       <h3 id="importObservationsTitle">Observações importantes</h3>
-       <p id="importNotice" aria-live="polite"></p>
+      <div class="import-preview-summary" aria-live="polite">
+       <p id="importNotice"></p>
+       <p id="importReviewAlerts" hidden=""></p>
+      </div>
+      <details class="import-observations">
+       <summary id="importObservationsTitle">Observações importantes</summary>
        <ul>
         <li>Confira os lançamentos antes de confirmar. Possíveis duplicados começam desmarcados; você pode incluí-los após revisar a origem indicada.</li>
         <li>Valores negativos são saídas; valores positivos são entradas. Você pode ajustar descrição, valor e categoria na prévia.</li>
@@ -387,7 +409,7 @@
         <li><strong>Possível repasse</strong> marca, nesta prévia, uma entrada seguida de saída no mesmo dia ou no dia seguinte, com diferença de até R$ 1. Confira o par indicado; o aviso não altera os valores automaticamente.</li>
         <li>Use <strong>Parcelas</strong> para registrar também a última parcela, como 2/2. As parcelas restantes viram previsões. O sistema concilia automaticamente correspondências únicas entre extratos importados em qualquer ordem; se necessário, vincule um lançamento já salvo na Visão geral.</li>
        </ul>
-      </aside>
+      </details>
       <div class="table-scroll import-review-scroll" role="region" aria-label="Lançamentos para conferir" tabindex="0">
        <table>
         <thead>
@@ -493,14 +515,14 @@
         </tbody>
        </table>
       </div>
-      <div class="actions">
-       <button class="secondary" id="prevPage">
-        Anterior
+      <div class="actions transaction-pagination">
+       <button class="secondary icon-button" id="prevPage" aria-label="Página anterior" title="Página anterior">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
        </button>
        <span id="pageInfo">
        </span>
-       <button class="secondary" id="nextPage">
-        Próxima
+       <button class="secondary icon-button" id="nextPage" aria-label="Próxima página" title="Próxima página">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
        </button>
       </div>
      </article>
@@ -551,7 +573,7 @@
      <p class="page-intro">
       Escolha uma meta e personalize os valores. Você acompanha uma meta ativa por vez.
      </p>
-     <div class="two-columns">
+     <div class="two-columns goals-layout">
       <article class="card">
        <h2>
         Definir minha meta
@@ -606,9 +628,10 @@
        </h2>
        <div id="goalSummary">
        </div>
-       <p class="hint">
-        Os cálculos usam os registros do período selecionado. Resultado positivo indica sobra nos lançamentos do mês, mas não confirma que esse valor foi guardado.
-       </p>
+       <aside class="goal-calculation-info">
+        <span aria-hidden="true">i</span>
+        <p>Os cálculos usam os registros do período selecionado. Resultado positivo indica sobra nos lançamentos do mês, mas não confirma que esse valor foi guardado.</p>
+       </aside>
        <button data-view="ia">
         Ver recomendações para a meta
        </button>
@@ -644,7 +667,7 @@
         Revisar lançamentos
        </button>
       </div>
-      <p class="hint" id="analysisGate">
+      <p class="analysis-gate" id="analysisGate" role="status" aria-live="polite">
       </p>
      </article>
      <div id="analysisResult">
@@ -667,26 +690,43 @@
       </h2>
       <p id="aiStatus">
       </p>
-      <p>
-       A classificação de lançamentos usa regras locais. Ao solicitar recomendações com IA, são enviados totais, categorias, dados da meta e indicadores agregados, sem descrições individuais, arquivo bruto ou senha. Sem configuração ou em caso de falha, as recomendações locais continuam disponíveis.
-      </p>
+      <ul class="settings-info-list">
+       <li>A classificação dos lançamentos utiliza somente regras locais.</li>
+       <li>A IA é opcional e só é acionada quando você seleciona essa opção ao gerar uma análise.</li>
+       <li>São enviados à API da OpenAI apenas totais, categorias, dados da meta e indicadores agregados.</li>
+       <li>Descrições individuais, arquivo bruto do extrato e senha não são enviados.</li>
+       <li>A OpenAI pode processar os dados fora do Brasil e informa que logs de monitoramento da API podem permanecer por até 30 dias.</li>
+       <li>Sem configuração ou em caso de falha da API, as recomendações locais continuam disponíveis.</li>
+      </ul>
      </article>
      <article class="card">
       <h2>
        Seus dados
       </h2>
       <p>
-       Os dados permanecem no banco local até a exclusão ou revogação. Você pode exportar seus registros, incluindo históricos de versões anteriores.
+       Os dados ficam no banco SQLite do computador em que esta instalação está sendo executada. Cópias locais do banco são mantidas por até 7 dias e apagadas ao revogar o consentimento ou excluir a conta. Você pode exportar seus registros, incluindo históricos de versões anteriores.
       </p>
-      <button class="secondary" id="exportBtn">
-       Exportar meus dados
-      </button>
-      <button hidden="" id="acceptConsentBtn">
-       Aceitar novamente o uso dos dados
-      </button>
-      <button class="danger" id="revokeConsentBtn">
-       Revogar consentimento e limpar dados financeiros
-      </button>
+      <details class="privacy-settings-summary">
+       <summary>Revisar informações sobre seus dados</summary>
+       <ul class="privacy-summary">
+        <li>Quem administra esta instalação local controla o armazenamento. Nome, e-mail, hash da senha e registros técnicos de segurança permanecem enquanto a conta existir.</li>
+        <li>Revogar o consentimento apaga lançamentos, metas, regras, categorias personalizadas, análises e cópias locais, mantendo somente a conta, o histórico do consentimento e registros técnicos.</li>
+        <li>Você pode acessar e exportar os dados, corrigir registros e solicitar a eliminação completa excluindo a conta.</li>
+        <li>Sem aceitar o termo, os recursos financeiros ficam indisponíveis. A IA continua sendo uma escolha separada em cada análise.</li>
+       </ul>
+      </details>
+      <div class="settings-data-actions">
+       <button class="secondary" id="exportBtn">
+        Exportar meus dados
+       </button>
+       <button hidden="" id="acceptConsentBtn">
+        Aceitar o termo de uso dos dados
+       </button>
+       <button class="danger" id="revokeConsentBtn">
+        Revogar consentimento e limpar dados financeiros
+       </button>
+      </div>
+      <p class="data-export-warning"><span aria-hidden="true">i</span><span>O arquivo exportado contém dados pessoais e financeiros. Guarde-o em local seguro e evite compartilhá-lo.</span></p>
      </article>
      <article class="card">
       <h2>

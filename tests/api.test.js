@@ -32,6 +32,7 @@ async function main() {
       const result = await response.json(); assert.equal(response.status, expected, `${method} ${route}: ${JSON.stringify(result)}`); return result;
     }
     await call('/api/register', 'POST', { name: 'Teste FinTrack', email: 'teste@example.test', password: 'Teste12345', confirmPassword: 'Teste12345', consentAccepted: true }, 201);
+    assert.equal((await call('/api/term')).version, '1.1', 'A conta aceita a versão vigente e imutável do termo');
     let cats = await call('/api/categories');
     assert.ok(cats.some(item => item.name === 'Transferência própria'));
     const category = await call('/api/categories', 'POST', { name: 'Pets', color: '#16734b' }, 201);
@@ -260,12 +261,20 @@ async function main() {
     await call('/api/transactions', 'POST', { description: 'Pix Maria Silva', date: `${sourceMonth}-05`, value: -25, category: 'Pets' }, 201);
     await call('/api/transactions', 'POST', { description: 'Pix Maria Silva', date: `${sourceMonth}-06`, value: -30, category: 'Pets' }, 201);
     result = await call(`/api/ai/analysis?month=${sourceMonth}&useAI=1`); assert.ok(result.ai); assert.equal(result.aiStatus.source, 'openai');
+    assert.equal(result.savedAnalysis.stale, false, 'A análise recém-gerada fica disponível como atualizada');
     assert.ok(!JSON.stringify(requests.at(-1).input).includes('Maria Silva'), 'A análise externa não recebe descrições de Pix');
     assert.ok(!JSON.stringify(JSON.parse(requests.at(-1).input)).includes('description'), 'A análise externa não recebe descrições individuais');
     const cachedCount = requests.length;
     result = await call(`/api/ai/analysis?month=${sourceMonth}&useAI=1`); assert.equal(result.aiStatus.cached, true); assert.equal(requests.length, cachedCount);
+    await call('/api/logout', 'POST', {});
+    await call('/api/login', 'POST', { email: 'teste@example.test', password: 'Teste12345' });
+    result = await call(`/api/ai/analysis?month=${sourceMonth}`);
+    assert.equal(result.savedAnalysis.stale, false, 'A última análise volta a ficar disponível depois de sair e entrar');
     await call('/api/goal', 'PUT', { objective: 'economizar', targetValue: 50 });
+    result = await call(`/api/ai/analysis?month=${sourceMonth}`);
+    assert.equal(result.savedAnalysis.stale, true, 'Alterações posteriores mantêm a última análise, marcada como desatualizada');
     result = await call(`/api/ai/analysis?month=${sourceMonth}&useAI=1`); assert.equal(result.aiStatus.cached, false); assert.equal(requests.length, cachedCount + 1);
+    assert.equal(result.savedAnalysis.stale, false, 'Gerar novamente atualiza a análise persistida');
     // Existing secondary goals/history remain exportable, while the active goal is updated in place.
     const { DatabaseSync } = require('node:sqlite');
     const legacyDb = new DatabaseSync(path.join(dir, 'app.db'));
@@ -288,13 +297,18 @@ async function main() {
     assert.equal((await call('/api/transactions')).length, beforeBulkDelete.length - 2);
     assert.ok(!(await call('/api/transactions')).some(item => selectedIds.includes(item.id)));
     await call('/api/monthly-closings', 'POST', {}, 404);
+    const backupDir = path.join(dir, 'backups');
+    fs.writeFileSync(path.join(backupDir, 'app-2026-09-20.db'), 'cópia de teste');
     await call('/api/consent/revoke', 'POST', {});
+    assert.ok(!fs.existsSync(path.join(backupDir, 'app-2026-09-20.db')), 'Revogação remove cópias locais que poderiam conservar os dados');
     await call('/api/transactions', 'GET', undefined, 403);
     await call('/api/categories', 'POST', { name: 'Teste', color: '#ffffff' }, 403);
     await call('/api/consent/accept', 'POST', {});
     assert.equal((await call('/api/transactions')).length, 0);
     assert.equal((await call('/api/goal')).goal, null);
+    fs.writeFileSync(path.join(backupDir, 'app-2026-09-21.db'), 'cópia de teste');
     await call('/api/account', 'DELETE', { password: 'Teste12345' });
+    assert.ok(!fs.existsSync(path.join(backupDir, 'app-2026-09-21.db')), 'Exclusão da conta remove cópias locais');
     await call('/api/demo/login', 'POST', {});
     assert.ok((await call(`/api/ai/analysis?month=${sourceMonth}`)).goal);
     console.log('API OK: categorias personalizadas, metas, CSV/XLSX/XLS, PDF rejeitado, duplicatas, IA simulada, cache, consentimento e demo.');
