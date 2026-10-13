@@ -21,6 +21,7 @@ const {
 } = require("./ai-service");
 
 const PORT = Number(process.env.PORT || 3000);
+const HOST = String(process.env.HOST || "127.0.0.1");
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = process.env.FINTRACK_DATA_DIR || path.join(ROOT, "data");
@@ -28,8 +29,13 @@ const DB_PATH = path.join(DATA_DIR, "app.db");
 const CERT_PATH = path.join(ROOT, "certs", "localhost-cert.pem");
 const KEY_PATH = path.join(ROOT, "certs", "localhost-key.pem");
 const sessions = new Map();
+const loginAttempts = new Map();
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
 const CONSENT_VERSION = "1.1";
 const BACKUP_RETENTION_DAYS = 7;
+const BACKUP_REFRESH_MS = 60 * 60 * 1000;
 const OPENAI_DAILY_LIMIT = Math.max(1, Number(process.env.OPENAI_DAILY_LIMIT || 10));
 const formatBRL = value => Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const ALLOWED_CATEGORIES = [
@@ -50,7 +56,6 @@ const ALLOWED_CATEGORIES = [
 ];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
-backupLocalDatabase();
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON");
 db.exec("PRAGMA journal_mode = WAL");
@@ -275,9 +280,11 @@ function backupLocalDatabase() {
   if (!stats.size) return;
   const stamp = new Date().toISOString().slice(0, 10);
   const backupPath = path.join(backupDir, `app-${stamp}.db`);
-  if (!fs.existsSync(backupPath)) {
-    fs.copyFileSync(DB_PATH, backupPath);
-  }
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  const temporaryPath = `${backupPath}.tmp`;
+  fs.copyFileSync(DB_PATH, temporaryPath);
+  fs.rmSync(backupPath, { force: true });
+  fs.renameSync(temporaryPath, backupPath);
 }
 
 function clearLocalBackups() {
@@ -288,6 +295,12 @@ function clearLocalBackups() {
       fs.rmSync(path.join(backupDir, entry.name), { force: true });
     }
   }
+}
+
+function refreshLocalBackupsAfterErasure() {
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  clearLocalBackups();
+  backupLocalDatabase();
 }
 
 ensureColumn("user_goals", "saved_amount", "REAL NOT NULL DEFAULT 0");
@@ -301,6 +314,7 @@ ensureColumn("financial_goals", "is_primary", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("goal_contributions", "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP");
 ensureColumn("user_consents", "revoked_at", "TEXT");
 ensureColumn("users", "is_demo", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("users", "demo_scenario", "TEXT");
 ensureColumn("transactions", "type", "TEXT NOT NULL DEFAULT 'saida'");
 ensureColumn("transactions", "classification_confidence", "TEXT NOT NULL DEFAULT 'manual'");
 ensureColumn("transactions", "classification_source", "TEXT NOT NULL DEFAULT 'manual'");
@@ -355,6 +369,8 @@ try {
   // Windows may ignore POSIX file modes; authentication and path isolation still apply.
 }
 
+backupLocalDatabase();
+
 function send(res, status, payload, headers = {}) {
   const body = typeof payload === "string" ? payload : JSON.stringify(payload);
   res.writeHead(status, {
@@ -373,16 +389,28 @@ function parseCookies(req) {
 }
 
 function createSession(userId) {
+  pruneSessions();
   const token = crypto.randomBytes(32).toString("hex");
   sessions.set(token, { userId, createdAt: Date.now() });
   return token;
+}
+
+function pruneSessions() {
+  const expiration = Date.now() - SESSION_TTL_MS;
+  for (const [token, session] of sessions) {
+    if (session.createdAt < expiration) sessions.delete(token);
+  }
 }
 
 function getUser(req) {
   const token = parseCookies(req).session;
   const session = token && sessions.get(token);
   if (!session) return null;
-  return db.prepare("SELECT id, name, email, is_demo, created_at FROM users WHERE id = ?").get(session.userId) || null;
+  if (Date.now() - session.createdAt >= SESSION_TTL_MS) {
+    sessions.delete(token);
+    return null;
+  }
+  return db.prepare("SELECT id, name, email, is_demo, demo_scenario, created_at FROM users WHERE id = ?").get(session.userId) || null;
 }
 
 function requireUser(req, res) {
@@ -391,11 +419,42 @@ function requireUser(req, res) {
   return user;
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 1024 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new Error("Requisição acima do limite permitido.");
+    chunks.push(chunk);
+  }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function loginAttemptKey(req, email) {
+  return `${req.socket.remoteAddress || "local"}:${email}`;
+}
+
+function loginBlocked(key) {
+  const expiration = Date.now() - LOGIN_WINDOW_MS;
+  for (const [storedKey, attempt] of loginAttempts) {
+    if (attempt.startedAt < expiration) loginAttempts.delete(storedKey);
+  }
+  const current = loginAttempts.get(key);
+  if (!current || Date.now() - current.startedAt >= LOGIN_WINDOW_MS) {
+    loginAttempts.delete(key);
+    return false;
+  }
+  return current.count >= MAX_LOGIN_ATTEMPTS;
+}
+
+function recordFailedLogin(key) {
+  const current = loginAttempts.get(key);
+  if (!current || Date.now() - current.startedAt >= LOGIN_WINDOW_MS) {
+    loginAttempts.set(key, { count: 1, startedAt: Date.now() });
+    return;
+  }
+  current.count += 1;
 }
 
 async function readBuffer(req, maxBytes = 8 * 1024 * 1024) {
@@ -989,11 +1048,28 @@ function ensureDefaultCategories(userId) {
   insert.run(userId, "Categoria pendente", 0, "#b45309");
 }
 
-const DEMO_ACCOUNT = {
-  name: "Pedro Gaspar - Demonstração TCC",
-  email: "tcc@fintrack.ai",
-  password: "FinTrack@2026",
-};
+const DEMO_SCENARIOS = [
+  {
+    id: "economizar",
+    name: "Demonstração — Economizar por mês",
+    email: "demo.economizar@fintrack.local",
+    goal: { name: "Economizar por mês", objective: "economizar", targetValue: 500, savedAmount: 0, targetMonths: 1, targetCategory: null, deadlineOffset: null },
+  },
+  {
+    id: "reduzir",
+    name: "Demonstração — Reduzir alimentação",
+    email: "demo.reduzir@fintrack.local",
+    goal: { name: "Reduzir gastos com alimentação", objective: "reduzir", targetValue: 350, savedAmount: 0, targetMonths: 1, targetCategory: "Alimentação", deadlineOffset: null },
+  },
+  {
+    id: "juntar",
+    name: "Demonstração — Juntar um valor",
+    email: "demo.juntar@fintrack.local",
+    goal: { name: "Juntar R$ 3.000", objective: "juntar", targetValue: 3000, savedAmount: 600, targetMonths: 6, targetCategory: null, deadlineOffset: 5 },
+  },
+];
+
+db.prepare("DELETE FROM users WHERE is_demo = 1 AND lower(email) = 'tcc@fintrack.ai'").run();
 
 function demoMonthValue(offset = 0) {
   const date = new Date();
@@ -1008,18 +1084,24 @@ function demoDate(monthValue, day) {
   return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 }
 
-function ensureDemoAccount(req) {
-  const email = DEMO_ACCOUNT.email.toLowerCase();
+function demoScenario(value) {
+  return DEMO_SCENARIOS.find((item) => item.id === String(value || "")) || null;
+}
+
+function ensureDemoAccount(scenarioId, req) {
+  const scenario = demoScenario(scenarioId);
+  if (!scenario) return null;
+  const email = scenario.email.toLowerCase();
   let user = db.prepare("SELECT id FROM users WHERE lower(email) = ?").get(email);
   if (!user) {
-    const passwordHash = bcrypt.hashSync(DEMO_ACCOUNT.password, 12);
-    const result = db.prepare("INSERT INTO users (name, email, password_hash, is_demo) VALUES (?, ?, ?, 1)")
-      .run(DEMO_ACCOUNT.name, email, passwordHash);
+    const passwordHash = bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 12);
+    const result = db.prepare("INSERT INTO users (name, email, password_hash, is_demo, demo_scenario) VALUES (?, ?, ?, 1, ?)")
+      .run(scenario.name, email, passwordHash, scenario.id);
     user = { id: result.lastInsertRowid };
   } else {
-    db.prepare("UPDATE users SET name = ?, is_demo = 1 WHERE id = ?").run(DEMO_ACCOUNT.name, user.id);
+    db.prepare("UPDATE users SET name = ?, is_demo = 1, demo_scenario = ? WHERE id = ?").run(scenario.name, scenario.id, user.id);
   }
-  seedDemoAccount(user.id, req);
+  seedDemoAccount(user.id, scenario, req);
   return db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
 }
 
@@ -1041,7 +1123,7 @@ function clearDemoAccountData(userId) {
 
 function insertDemoTransaction(insert, userId, month, day, description, value, category, paymentMethod, status = "Concluida") {
   const type = value > 0 ? "entrada" : "saida";
-  insert.run(
+  return insert.run(
     userId,
     description,
     value,
@@ -1054,11 +1136,12 @@ function insertDemoTransaction(insert, userId, month, day, description, value, c
     status,
     "demo tcc",
     `tcc-${month}-${day}-${normalizeDescription(description).slice(0, 28)}`,
-  );
+  ).lastInsertRowid;
 }
 
-function seedDemoAccount(userId, req) {
-  const previousMonth = demoMonthValue(-1);
+function seedDemoAccount(userId, scenario, req) {
+  const months = Array.from({ length: 6 }, (_, index) => demoMonthValue(index - 6));
+  const latestCompleteMonth = months.at(-1);
   const currentMonth = demoMonthValue(0);
   db.exec("BEGIN");
   try {
@@ -1075,53 +1158,42 @@ function seedDemoAccount(userId, req) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const demoTransactions = [
-      [previousMonth, 5, "Salário Tech Ltda", 4200, "Receita", "Transferência bancária"],
-      [previousMonth, 7, "Freelance Landing Page", 520, "Receita", "PIX recebido"],
-      [previousMonth, 5, "Aluguel Residencial", -1350, "Contas fixas", "Débito automático"],
-      [previousMonth, 6, "Internet Fibra 500MB", -119.9, "Contas fixas", "Cartão de crédito"],
-      [previousMonth, 8, "Energia Elétrica", -176.4, "Contas fixas", "Boleto"],
-      [previousMonth, 8, "Supermercado Atacadão", -512.3, "Mercado", "Cartão de débito"],
-      [previousMonth, 10, "iFood Restaurante", -89.7, "Alimentação", "Cartão de crédito"],
-      [previousMonth, 12, "Uber Viagem", -44.8, "Transporte", "Cartão de crédito"],
-      [previousMonth, 14, "Spotify Premium", -21.9, "Assinaturas", "Cartão de crédito"],
-      [previousMonth, 15, "Netflix", -39.9, "Assinaturas", "Cartão de crédito"],
-      [previousMonth, 17, "Cinema Shopping Center", -72, "Lazer", "Cartão de crédito"],
-      [previousMonth, 18, "Farmácia Drogasil", -58.25, "Saúde", "Cartão de débito"],
-      [previousMonth, 20, "Curso Online Finanças", -79.9, "Educação", "Cartão de crédito"],
-      [previousMonth, 22, "Mercado Livre", -335.8, "Compras", "Cartão de crédito"],
-      [previousMonth, 25, "Restaurante Centro", -64.6, "Alimentação", "Cartão de crédito"],
-      [currentMonth, 5, "Salário Tech Ltda", 4800, "Receita", "Transferência bancária"],
-      [currentMonth, 6, "Freelance Ajustes Site", 650, "Receita", "PIX recebido"],
-      [currentMonth, 7, "Reembolso Transporte", 150, "Receita", "PIX recebido"],
-      [currentMonth, 5, "Aluguel Residencial", -1350, "Contas fixas", "Débito automático"],
-      [currentMonth, 6, "Internet Fibra 500MB", -119.9, "Contas fixas", "Cartão de crédito"],
-      [currentMonth, 7, "Energia Elétrica", -186.4, "Contas fixas", "Boleto"],
-      [currentMonth, 7, "Celular Plano Controle", -48.99, "Contas fixas", "Cartão de crédito"],
-      [currentMonth, 8, "Supermercado Pão de Açúcar", -342.8, "Mercado", "Cartão de débito"],
-      [currentMonth, 12, "Atacadão Compras do Mês", -212.5, "Mercado", "Cartão de débito"],
-      [currentMonth, 8, "Uber Viagem", -36.7, "Transporte", "Cartão de crédito"],
-      [currentMonth, 11, "Uber", -28.4, "Transporte", "Cartão de crédito"],
-      [currentMonth, 15, "Posto Ipiranga Combustível", -180, "Transporte", "Cartão de crédito"],
-      [currentMonth, 9, "iFood Restaurante", -78.5, "Alimentação", "Cartão de crédito"],
-      [currentMonth, 13, "iFood Lanches", -64.9, "Alimentação", "Cartão de crédito"],
-      [currentMonth, 18, "Restaurante Faculdade", -95.3, "Alimentação", "Cartão de crédito"],
-      [currentMonth, 21, "Padaria Café", -42.2, "Alimentação", "Cartão de débito"],
-      [currentMonth, 10, "Spotify Premium", -21.9, "Assinaturas", "Cartão de crédito"],
-      [currentMonth, 11, "Netflix", -39.9, "Assinaturas", "Cartão de crédito"],
-      [currentMonth, 18, "Disney Plus", -33.9, "Assinaturas", "Cartão de crédito"],
-      [currentMonth, 12, "Cinema Shopping Center", -86, "Lazer", "Cartão de crédito"],
-      [currentMonth, 19, "Passeio Parque", -55, "Lazer", "PIX"],
-      [currentMonth, 13, "Faculdade Mensalidade", -614.42, "Educação", "Boleto"],
-      [currentMonth, 16, "Curso Online Finanças", -79.9, "Educação", "Cartão de crédito"],
-      [currentMonth, 14, "Compra Mercado Livre", -248.9, "Compras", "Cartão de crédito"],
-      [currentMonth, 20, "Shopping Roupas", -192.97, "Compras", "Cartão de crédito"],
-      [currentMonth, 15, "Farmácia Drogasil", -64.25, "Saúde", "Cartão de débito"],
-      [currentMonth, 22, "Seguro da Moto", -145.22, "Transporte", "Boleto"],
-    ];
+    const demoTransactions = months.flatMap((month, index) => {
+      const factor = index + 1;
+      return [
+        [month, 3, "Salário Tech Ltda", 4800, "Receita", "Transferência bancária"],
+        ...(index % 2 ? [[month, 6, "Freelance Ajustes Site", 350 + factor * 30, "Receita", "PIX recebido"]] : []),
+        [month, 4, "Aluguel Residencial", -1350, "Contas fixas", "Débito automático"],
+        [month, 5, "Internet Fibra 500MB", -119.9, "Contas fixas", "Cartão de crédito"],
+        [month, 7, "Energia Elétrica", -(158 + factor * 6.4), "Contas fixas", "Boleto"],
+        [month, 8, "Supermercado Atacadão", -(430 + factor * 18.5), "Mercado", "Cartão de débito"],
+        [month, 9, "iFood Restaurante", -(58 + factor * 8.5), "Alimentação", "Cartão de crédito"],
+        [month, 12, "Restaurante Centro", -(64 + factor * 9.2), "Alimentação", "Cartão de crédito"],
+        [month, 16, "Padaria Café", -(28 + factor * 4.1), "Alimentação", "Cartão de débito"],
+        ...(index >= 4 ? [[month, 20, "Restaurante Faculdade", -(92 + factor * 5), "Alimentação", "Cartão de crédito"]] : []),
+        [month, 10, "Uber Viagem", -(36 + factor * 4.2), "Transporte", "Cartão de crédito"],
+        [month, 14, "Posto Ipiranga Combustível", -(150 + factor * 7), "Transporte", "Cartão de crédito"],
+        [month, 11, "Spotify Premium", -21.9, "Assinaturas", "Cartão de crédito"],
+        [month, 11, "Netflix", -39.9, "Assinaturas", "Cartão de crédito"],
+        [month, 18, "Cinema Shopping Center", -(62 + factor * 6), "Lazer", "Cartão de crédito"],
+        [month, 19, "Farmácia Drogasil", -(48 + factor * 3.5), "Saúde", "Cartão de débito"],
+        [month, 13, "Faculdade Mensalidade", -614.42, "Educação", "Boleto"],
+        [month, 22, "Compra Mercado Livre", -(145 + factor * 22), "Compras", "Cartão de crédito"],
+      ];
+    });
+    demoTransactions.push([latestCompleteMonth, 24, "Notebook parcela 1/6", -300, "Compras", "Cartão de crédito"]);
     for (const item of demoTransactions) insertDemoTransaction(insertTransaction, userId, ...item);
 
-    db.prepare("INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, target_months, intensity, is_primary) VALUES (?, 'Economizar por mês', 'economizar', 500, 0, 1, 'equilibrado', 1)").run(userId);
+    const goal = scenario.goal;
+    const deadline = goal.deadlineOffset == null ? null : demoDate(demoMonthValue(goal.deadlineOffset), 28);
+    db.prepare("INSERT INTO financial_goals (user_id, goal_name, objective, target_value, saved_amount, target_months, intensity, target_category, deadline, is_primary) VALUES (?, ?, ?, ?, ?, ?, 'equilibrado', ?, ?, 1)")
+      .run(userId, goal.name, goal.objective, goal.targetValue, goal.savedAmount, goal.targetMonths, goal.targetCategory, deadline);
+
+    const source = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND description = 'Notebook parcela 1/6' ORDER BY id DESC LIMIT 1").get(userId);
+    const insertInstallment = db.prepare("INSERT INTO planned_installments (user_id, source_transaction_id, installment_number, installment_total, due_date, amount, category) VALUES (?, ?, ?, 6, ?, 300, 'Compras')");
+    for (let number = 2; number <= 6; number++) {
+      insertInstallment.run(userId, source.id, number, demoDate(demoMonthValue(number - 2), 24));
+    }
 
     const insertRule = db.prepare("INSERT INTO category_rules (user_id, merchant_pattern, category) VALUES (?, ?, ?)");
     [
@@ -1135,9 +1207,23 @@ function seedDemoAccount(userId, req) {
       ["atacadao", "Mercado"],
     ].forEach(([pattern, category]) => insertRule.run(userId, pattern, category));
 
-    audit(userId, "DEMO_ACCOUNT_READY", { message: "Conta de demonstração TCC recriada com dados fictícios.", month: currentMonth }, req);
+    const rows = db.prepare("SELECT id, description, value, date, category, type, note, installment_number, installment_total, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC").all(userId);
+    const savedGoal = db.prepare("SELECT * FROM financial_goals WHERE user_id = ? AND is_primary = 1").get(userId);
+    const localAnalysis = buildFinancialAnalysis(rows, savedGoal, [], { month: latestCompleteMonth });
+    localAnalysis.periodStatus = "previous";
+    localAnalysis.upcomingInstallments = upcomingInstallments(userId);
+    const analysisResponse = {
+      ...localAnalysis,
+      ai: null,
+      openAIRequestSummary: summarizeOpenAIRequest(localAnalysis),
+      aiStatus: { source: "local", model: null, cached: false, warning: null },
+    };
+    const fingerprint = generateFinancialAnalysisHash(userId, rows, localAnalysis.categoryBudgets, localAnalysis.goals || savedGoal, latestCompleteMonth, localAnalysis.upcomingInstallments);
+    saveAnalysisHistory(userId, latestCompleteMonth, fingerprint, analysisResponse, analysisResponse.openAIRequestSummary);
+
+    audit(userId, "DEMO_ACCOUNT_READY", { message: "Cenário de demonstração recriado com seis meses de dados fictícios.", scenario: scenario.id, months }, req);
     audit(userId, "CONSENT_ACCEPTED", { termVersion: CONSENT_VERSION, demo: true }, req);
-    audit(userId, "IMPORT_CONFIRMED", { source: "Demonstração TCC", transactions: demoTransactions.length }, req);
+    audit(userId, "IMPORT_CONFIRMED", { source: `Demonstração TCC — ${scenario.id}`, transactions: demoTransactions.length, currentMonth }, req);
 
     db.exec("COMMIT");
   } catch (error) {
@@ -1543,7 +1629,28 @@ function summarizeOpenAIRequest(analysis) {
 }
 
 function generateFinancialAnalysisHash(userId, transactions, categoryBudgets, goal, analysisMonth, upcoming) {
-  return crypto.createHash("sha256").update(JSON.stringify({ version: 6, userId, model: OPENAI_MODEL, transactions, goal, analysisMonth, upcoming })).digest("hex");
+  const periodTransactions = filterTransactionsForMonth(transactions, analysisMonth).map((item) => ({
+    id: item.id,
+    description: item.description,
+    value: item.value,
+    date: item.date,
+    category: item.category,
+    type: item.type,
+    note: item.note,
+    installment_number: item.installment_number,
+    installment_total: item.installment_total,
+    updated_at: item.updated_at,
+  }));
+  return crypto.createHash("sha256").update(JSON.stringify({
+    version: 7,
+    userId,
+    model: OPENAI_MODEL,
+    transactions: periodTransactions,
+    categoryBudgets,
+    goal,
+    analysisMonth,
+    upcoming,
+  })).digest("hex");
 }
 
 function latestSavedAnalysis(userId, month, currentFingerprint) {
@@ -1572,10 +1679,18 @@ function saveAnalysisHistory(userId, month, fingerprint, analysis, requestSummar
   const source = analysis.ai ? "openai" : "local";
   const model = analysis.ai ? analysis.aiStatus?.model || OPENAI_MODEL : null;
   const summary = analysis.ai?.executiveSummary || `Entradas ${formatBRL(analysis.totalIncome)}, despesas ${formatBRL(analysis.totalExpenses)} e resultado ${formatBRL(analysis.balance)}.`;
-  db.prepare(`
+  const existing = db.prepare("SELECT id FROM ai_analysis_history WHERE user_id = ? AND month = ? AND fingerprint = ? ORDER BY id DESC LIMIT 1")
+    .get(userId, month, fingerprint);
+  if (existing) {
+    db.prepare("UPDATE ai_analysis_history SET source = ?, model = ?, summary = ?, request_json = ?, response_json = ?, created_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(source, model, summary, JSON.stringify(requestSummary || {}), JSON.stringify(analysis), existing.id);
+  } else db.prepare(`
     INSERT INTO ai_analysis_history (user_id, month, source, model, summary, request_json, response_json, is_official, fingerprint)
     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
   `).run(userId, month, source, model, summary, JSON.stringify(requestSummary || {}), JSON.stringify(analysis), fingerprint);
+  db.prepare(`DELETE FROM ai_analysis_history WHERE user_id = ? AND month = ? AND id NOT IN (
+    SELECT id FROM ai_analysis_history WHERE user_id = ? AND month = ? ORDER BY id DESC LIMIT 24
+  )`).run(userId, month, userId, month);
 }
 
 function validateTransaction(input) {
@@ -1639,6 +1754,7 @@ function revokeConsentAndClearData(userId, req) {
     db.prepare("DELETE FROM financial_goals WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM category_rules WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM categories WHERE user_id = ? AND is_system = 0").run(userId);
+    db.prepare("UPDATE categories SET monthly_limit = 0 WHERE user_id = ? AND is_system = 1").run(userId);
     db.prepare("DELETE FROM ai_analysis_cache WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_analysis_history WHERE user_id = ?").run(userId);
     db.prepare("DELETE FROM ai_daily_usage WHERE user_id = ?").run(userId);
@@ -1657,15 +1773,15 @@ function revokeConsentAndClearData(userId, req) {
     db.exec("ROLLBACK");
     throw error;
   }
-  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  clearLocalBackups();
+  refreshLocalBackupsAfterErasure();
 }
 
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
   const requested = url.pathname === "/" ? "/index.html" : url.pathname;
   const filePath = path.normalize(path.join(PUBLIC_DIR, requested));
-  if (!filePath.startsWith(PUBLIC_DIR)) return send(res, 403, "Acesso negado.");
+  const relativePath = path.relative(PUBLIC_DIR, filePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return send(res, 403, "Acesso negado.");
   if (!fs.existsSync(filePath)) return send(res, 404, "Arquivo não encontrado.");
   const ext = path.extname(filePath);
   const types = {
@@ -1714,24 +1830,36 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/login") {
       const body = await readJson(req);
       const email = String(body.email || "").trim().toLowerCase();
+      const attemptKey = loginAttemptKey(req, email);
+      if (loginBlocked(attemptKey)) {
+        return send(res, 429, { error: "Muitas tentativas de entrada. Aguarde 15 minutos e tente novamente." });
+      }
       const user = db.prepare("SELECT * FROM users WHERE lower(email) = ?").get(email);
       if (!user || !(await bcrypt.compare(String(body.password || ""), user.password_hash))) {
+        recordFailedLogin(attemptKey);
         return send(res, 401, { error: "E-mail ou senha inválidos. Confira os dados ou crie uma nova conta." });
       }
-      if (user.is_demo) seedDemoAccount(user.id, req);
+      loginAttempts.delete(attemptKey);
+      if (user.is_demo) {
+        const scenario = demoScenario(user.demo_scenario) || DEMO_SCENARIOS.find((item) => item.email === user.email);
+        if (!scenario) return send(res, 400, { error: "Cenário de demonstração inválido." });
+        seedDemoAccount(user.id, scenario, req);
+      }
       ensureDefaultCategories(user.id);
       audit(user.id, "USER_LOGIN", null, req);
       return send(res, 200, { ok: true }, { "Set-Cookie": cookieHeader(createSession(user.id), req) });
     }
 
     if (req.method === "POST" && url.pathname === "/api/demo/login") {
-      const user = ensureDemoAccount(req);
-      audit(user.id, "DEMO_LOGIN", { message: "Acesso iniciado pela conta de demonstração TCC." }, req);
+      const body = await readJson(req);
+      const scenario = demoScenario(body.scenario);
+      if (!scenario) return send(res, 400, { error: "Escolha um cenário de demonstração válido." });
+      const user = ensureDemoAccount(scenario.id, req);
+      audit(user.id, "DEMO_LOGIN", { message: "Acesso iniciado em um cenário de demonstração TCC.", scenario: scenario.id }, req);
       return send(res, 200, {
         ok: true,
         demo: true,
-        email: DEMO_ACCOUNT.email,
-        password: DEMO_ACCOUNT.password,
+        scenario: scenario.id,
       }, { "Set-Cookie": cookieHeader(createSession(user.id), req) });
     }
 
@@ -1746,6 +1874,33 @@ async function handleApi(req, res) {
       if (!user) return;
       ensureDefaultCategories(user.id);
       return send(res, 200, { user, consentAccepted: hasConsent(user.id) });
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/account/profile") {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (user.is_demo) return send(res, 403, { error: "A conta demonstrativa é restaurada automaticamente e não pode ser alterada." });
+      const body = await readJson(req);
+      const name = String(body.name || "").trim();
+      const email = String(body.email || "").trim().toLowerCase();
+      if (name.length < 3 || name.length > 80) return send(res, 400, { error: "Informe um nome com 3 a 80 caracteres." });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: "Informe um e-mail válido." });
+      const duplicate = db.prepare("SELECT id FROM users WHERE lower(email) = ? AND id <> ?").get(email, user.id);
+      if (duplicate) return send(res, 409, { error: "Este e-mail já está cadastrado." });
+      const emailChanged = email !== user.email.toLowerCase();
+      if (emailChanged) {
+        const stored = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id);
+        if (!stored || !(await bcrypt.compare(String(body.password || ""), stored.password_hash))) {
+          return send(res, 401, { error: "Informe sua senha atual para alterar o e-mail." });
+        }
+      }
+      db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").run(name, email, user.id);
+      const changedFields = [];
+      if (name !== user.name) changedFields.push("name");
+      if (emailChanged) changedFields.push("email");
+      if (changedFields.length) audit(user.id, "ACCOUNT_PROFILE_UPDATED", { fields: changedFields }, req);
+      const updatedUser = db.prepare("SELECT id, name, email, is_demo, demo_scenario, created_at FROM users WHERE id = ?").get(user.id);
+      return send(res, 200, { user: updatedUser });
     }
 
     if (req.method === "GET" && url.pathname === "/api/term") {
@@ -2017,7 +2172,7 @@ async function handleApi(req, res) {
       const previousCalendarMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const previousMonthKey = `${previousCalendarMonth.getFullYear()}-${String(previousCalendarMonth.getMonth() + 1).padStart(2, "0")}`;
       const periodStatus = selectedMonth === currentMonth ? "current" : selectedMonth === previousMonthKey ? "previous" : "historical";
-      const rows = db.prepare("SELECT description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC").all(user.id);
+      const rows = db.prepare("SELECT id, description, value, date, category, type, classification_confidence, classification_source, payment_method, transaction_status, source, note, installment_number, installment_total, created_at, updated_at FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC").all(user.id);
       const goals = getUserGoals(user.id);
       const goal = goals[0] || null;
 
@@ -2323,11 +2478,15 @@ async function handleApi(req, res) {
       const goal = goals[0] || null;
       const goalContributions = getGoalContributions(user.id, 1000);
       const goalHistory = getGoalChangeHistory(user.id, 1000);
+      const categories = db.prepare("SELECT name, monthly_limit, color, is_system, created_at FROM categories WHERE user_id = ? ORDER BY is_system DESC, name").all(user.id);
       const categoryRules = loadCategoryRules(user.id);
-      const aiHistory = db.prepare("SELECT month, source, model, summary, is_official, created_at FROM ai_analysis_history WHERE user_id = ? ORDER BY id DESC").all(user.id);
+      const aiHistory = db.prepare("SELECT month, source, model, summary, request_json, response_json, is_official, created_at FROM ai_analysis_history WHERE user_id = ? ORDER BY id DESC").all(user.id)
+        .map((row) => ({ ...row, request: safeJson(row.request_json), response: safeJson(row.response_json), request_json: undefined, response_json: undefined }));
+      const auditHistory = db.prepare("SELECT action, details, ip, created_at FROM audit_logs WHERE user_id = ? ORDER BY id DESC").all(user.id)
+        .map((row) => ({ ...row, details: safeJson(row.details) }));
       const monthlyClosings = db.prepare("SELECT month, snapshot_json, closed_at FROM monthly_closings WHERE user_id = ? ORDER BY month DESC").all(user.id)
         .map((row) => ({ ...row, snapshot: JSON.parse(row.snapshot_json || "{}"), snapshot_json: undefined }));
-      return send(res, 200, { user, consents, goal, goals, goalContributions, goalHistory, monthlyClosings, categoryRules, aiHistory, transactions, plannedInstallments }, {
+      return send(res, 200, { user, consents, goal, goals, goalContributions, goalHistory, monthlyClosings, categories, categoryRules, aiHistory, auditHistory, transactions, plannedInstallments }, {
         "Content-Disposition": "attachment; filename=\"meus-dados-financeiros.json\"",
       });
     }
@@ -2343,8 +2502,7 @@ async function handleApi(req, res) {
       const token = parseCookies(req).session;
       db.prepare("DELETE FROM audit_logs WHERE user_id = ?").run(user.id);
       db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
-      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-      clearLocalBackups();
+      refreshLocalBackupsAfterErasure();
       if (token) sessions.delete(token);
       return send(res, 200, { ok: true }, { "Set-Cookie": "session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/" });
     }
@@ -2352,6 +2510,8 @@ async function handleApi(req, res) {
     return send(res, 404, { error: "Rota não encontrada." });
   } catch (error) {
     const message = String(error.message || "");
+    if (message.includes("Requisição acima do limite")) return send(res, 413, { error: message });
+    if (error instanceof SyntaxError) return send(res, 400, { error: "O conteúdo enviado não é um JSON válido." });
     if (/Arquivo acima|Envie o arquivo|Arquivo não encontrado/.test(message)) return send(res, 400, { error: message });
     if (message.includes("categories.user_id") || message.includes("category_rules.user_id")) {
       return send(res, 409, { error: "Já existe uma categoria ou regra com esse nome." });
@@ -2375,22 +2535,51 @@ function isHttps(req) {
 
 const serverHandler = (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:");
+  res.setHeader("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
   if (req.url.startsWith("/api/")) return handleApi(req, res);
   return serveStatic(req, res);
 };
 
 function startServer() {
+  let server;
   if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
-    return https.createServer({ cert: fs.readFileSync(CERT_PATH), key: fs.readFileSync(KEY_PATH) }, serverHandler)
-      .listen(PORT, () => console.log(`Servidor HTTPS em https://localhost:${PORT}`));
+    server = https.createServer({ cert: fs.readFileSync(CERT_PATH), key: fs.readFileSync(KEY_PATH) }, serverHandler)
+      .listen(PORT, HOST, () => console.log(`Servidor HTTPS em https://${HOST}:${PORT}`));
+  } else {
+    server = http.createServer(serverHandler)
+      .listen(PORT, HOST, () => console.log(`Servidor HTTP de desenvolvimento em http://${HOST}:${PORT}`));
   }
-  return http.createServer(serverHandler)
-    .listen(PORT, () => console.log(`Servidor HTTP de desenvolvimento em http://localhost:${PORT}`));
+  const backupTimer = setInterval(() => {
+    try {
+      backupLocalDatabase();
+    } catch (error) {
+      console.error("Não foi possível atualizar a cópia local:", error.message);
+    }
+  }, BACKUP_REFRESH_MS);
+  backupTimer.unref();
+  server.once("close", () => clearInterval(backupTimer));
+  return server;
 }
 
-if (require.main === module) startServer();
+function closeApplication() {
+  try {
+    backupLocalDatabase();
+  } finally {
+    db.close();
+  }
+}
+
+if (require.main === module) {
+  startServer();
+  const shutdown = () => {
+    closeApplication();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}
 
 module.exports = {
   startServer,

@@ -4,14 +4,14 @@ Protótipo web de educação financeira para TGI: classificação de lançamento
 
 ## Fluxo
 
-1. Criar conta ou entrar na demonstração com dados simulados.
+1. Criar conta ou escolher um dos cenários de demonstração com dados simulados.
 2. Importar CSV, XLSX ou XLS, ou cadastrar lançamentos manualmente.
 3. Conferir descrição, data, valor, direção e categoria na prévia.
 4. Resolver categorias pendentes na tela Lançamentos. É possível criar categorias personalizadas.
 5. Escolher uma meta: reduzir gastos em uma categoria, economizar por mês ou juntar dinheiro para um objetivo.
 6. Gerar análise com resumo, padrões, pontos de atenção e até três recomendações.
 
-O menu tem cinco telas principais: **Visão geral**, **Lançamentos**, **Categorias**, **Minha meta** e **Análise e recomendações**. Configurações reúne conta, consentimento e exportação. A seção aberta aparece no endereço; atualizar a página mantém a mesma seção.
+O menu tem cinco telas principais: **Visão geral**, **Lançamentos**, **Categorias**, **Minha meta** e **Análise e recomendações**. Configurações permite editar nome e e-mail, além de reunir consentimento, exportação e exclusão da conta. Alterar o e-mail exige a senha atual. A seção aberta aparece no endereço; atualizar a página mantém a mesma seção.
 
 ## Executar
 
@@ -22,11 +22,11 @@ npm install
 npm start
 ```
 
-Abra [o aplicativo local](http://localhost:3000). O arquivo `Abrir FinTrack AI.bat` também inicia o servidor. Se houver um processo antigo usando a porta 3000, encerre esse servidor antes de iniciar a versão atualizada.
+Abra [o aplicativo local](http://127.0.0.1:3000). O arquivo `Abrir FinTrack AI.bat` também inicia o servidor. Se houver um processo antigo usando a porta 3000, encerre esse servidor antes de iniciar a versão atualizada. Por padrão, o servidor escuta somente em `127.0.0.1` e não fica disponível para outros equipamentos da rede.
 
 Se esquecer a senha, encerre o servidor local e abra `Redefinir Senha FinTrack.bat`. Informe o e-mail da conta e a nova senha. O utilitário roda localmente e altera somente o hash armazenado em `data/app.db`.
 
-As contas comuns começam vazias. **Abrir demonstração** restaura uma conta separada com transações simuladas de dois meses e uma meta mensal. Alterações feitas na demonstração são restauradas no próximo acesso.
+As contas comuns começam vazias. A entrada oferece três cenários de demonstração: **Economizar por mês**, **Reduzir alimentação** e **Juntar para um objetivo**. Todos usam a mesma base fictícia de seis meses para evidenciar como a meta altera a análise, e deixam o mês atual livre para uma importação durante a apresentação. Cada cenário é restaurado quando aberto.
 
 ## Importação e categorias
 
@@ -56,7 +56,7 @@ Há uma meta ativa por usuário. Salvar outra escolha atualiza a meta ativa. O v
 
 Totais, médias, limites e indicadores são calculados em `finance-core.js`, sem depender da IA. A análise indica limitações de histórico, falta de entradas e períodos incompletos. Resultado positivo não comprova dinheiro guardado nem saldo disponível em conta.
 
-A Visão geral mostra as parcelas previstas para os próximos três meses a partir de hoje, separadas das despesas realizadas. Uma tabela separada, **Pagamentos para confirmar**, mostra previsões vencidas até o mês atual que ainda não foram vinculadas a lançamentos. A análise recente também apresenta as previsões; a IA opcional recebe apenas seus totais mensais agregados, sem descrições dos lançamentos.
+A Visão geral mostra as parcelas previstas para os próximos três meses a partir de hoje, separadas das despesas realizadas. Ao expandir a lista, cada previsão exibe descrição da compra, vencimento, categoria, número da parcela e valor. Uma tabela separada, **Pagamentos para confirmar**, mostra previsões vencidas até o mês atual que ainda não foram vinculadas a lançamentos. A análise recente também apresenta as previsões; a IA opcional recebe apenas seus totais mensais agregados, sem descrições dos lançamentos.
 
 O mês de referência aparece na Análise e fica sincronizado com o período de Lançamentos e da Visão geral. Ao entrar, o aplicativo seleciona o mês mais recente com registros. O mês atual e o mês anterior permitem gerar recomendações usando a meta atual como referência; o mês atual pode estar incompleto. Meses anteriores mostram uma consulta histórica com totais, categorias e comparação mensal, sem aplicar a meta atual, incluir previsões futuras no resultado ou chamar a IA.
 Na Visão geral, as setas percorrem os meses entre o primeiro com lançamentos e o mês atual; o mês escolhido também atualiza Lançamentos e Análise.
@@ -87,7 +87,13 @@ O banco padrão permanece em `data/app.db`. A atualização acrescenta campos de
 
 O arquivo `.env`, o diretório `data/` (incluindo contas e lançamentos) e `node_modules/` são locais e ignorados pelo Git. `.env.example` contém apenas campos de exemplo. Não copie chaves, senhas ou extratos reais para arquivos do repositório.
 
-Esta versão foi projetada para execução local. Os dados ficam no banco SQLite do computador que executa o FinTrack. O sistema mantém uma cópia diária do banco por até sete dias; cópias vencidas são removidas ao iniciar, e revogar o consentimento ou excluir uma conta remove as cópias locais imediatamente para que elas não conservem os dados apagados. O SQLite usa exclusão segura e o log de escrita é truncado após essas operações.
+Esta versão foi projetada para execução local. Os dados ficam no banco SQLite do computador que executa o FinTrack. O sistema atualiza a cópia do dia ao iniciar, a cada hora enquanto permanece aberto e ao encerrar normalmente, depois de incorporar ao banco principal as alterações que estavam no log de escrita. As cópias são mantidas por até sete dias. Revogar o consentimento ou excluir uma conta remove as cópias anteriores e gera uma nova cópia já sem os dados apagados, preservando somente os dados das demais contas locais, se existirem. O SQLite usa exclusão segura e o log de escrita é truncado após essas operações.
+
+A exportação em JSON inclui lançamentos, parcelas, categorias e limites, regras aprendidas, metas e históricos de metas, análises salvas, consentimentos, fechamentos mensais e registros de auditoria. Ela serve para consulta e portabilidade. Esta versão ainda não oferece restauração automática a partir do arquivo exportado.
+
+A tela inicial oferece três cenários demonstrativos: economizar por mês, reduzir gastos com alimentação e juntar um valor com prazo. Eles utilizam a mesma base fictícia de seis meses completos e diferem somente na meta, permitindo comparar as análises. O mês atual permanece sem lançamentos para a demonstração de uma importação ao vivo. Cada cenário é restaurado ao ser aberto e não expõe credenciais ao navegador.
+
+A importação de planilhas usa o pacote oficial SheetJS `0.20.3`, instalado a partir do CDN oficial indicado pela documentação do projeto, pois a versão antiga publicada no registro do npm possui vulnerabilidades conhecidas.
 
 O termo de uso dos dados é versionado. A versão `1.1` informa os dados financeiros e técnicos registrados, a retenção local, os controles do usuário e o uso opcional da API da OpenAI. Contas que aceitaram uma versão anterior precisam aceitar a versão atual antes de voltar a usar os recursos financeiros. Alterações futuras relevantes devem criar uma nova versão, preservando o texto das versões anteriores.
 

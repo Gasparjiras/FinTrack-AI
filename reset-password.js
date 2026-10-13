@@ -15,10 +15,47 @@ if (!fs.existsSync(dbPath)) {
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = question => new Promise(resolve => rl.question(question, resolve));
 
+function askHidden(question) {
+  if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') return ask(question);
+  rl.pause();
+  return new Promise((resolve, reject) => {
+    let value = '';
+    process.stdout.write(question);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    const finish = () => {
+      process.stdin.off('data', onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdout.write('\n');
+    };
+    const onData = buffer => {
+      for (const character of buffer.toString('utf8')) {
+        if (character === '\u0003') {
+          finish();
+          reject(new Error('Operação cancelada.'));
+          return;
+        }
+        if (character === '\r' || character === '\n') {
+          finish();
+          resolve(value);
+          return;
+        }
+        if (character === '\u007f' || character === '\b') {
+          value = value.slice(0, -1);
+        } else if (character >= ' ') {
+          value += character;
+        }
+      }
+    };
+    process.stdin.on('data', onData);
+  });
+}
+
 async function main() {
   const email = String(await ask('E-mail da conta: ')).trim().toLowerCase();
-  const password = String(await ask('Nova senha: '));
-  const confirmation = String(await ask('Confirme a nova senha: '));
+  const password = String(await askHidden('Nova senha (a digitação ficará oculta): '));
+  const confirmation = String(await askHidden('Confirme a nova senha: '));
   if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
     throw new Error('A senha precisa ter no mínimo 8 caracteres, com pelo menos uma letra e um número.');
   }

@@ -92,7 +92,10 @@ on('#registerForm', 'submit', async event => {
   if (data.password !== data.confirmPassword) throw new Error('A confirmação da senha não confere.');
   await api('/api/register', { method: 'POST', body: JSON.stringify({ ...data, consentAccepted: Boolean(data.consentAccepted) }) }); await boot();
 });
-on('#demoLoginBtn', 'click', async () => { await api('/api/demo/login', { method: 'POST', body: '{}' }); await boot(); });
+$$('[data-demo-scenario]').forEach(button => button.addEventListener('click', async () => {
+  await api('/api/demo/login', { method: 'POST', body: JSON.stringify({ scenario: button.dataset.demoScenario }) });
+  await boot();
+}));
 on('#logoutBtn', 'click', async () => {
   if (!confirm('Deseja realmente sair da sua conta?')) return;
   await api('/api/logout', { method: 'POST', body: '{}' });
@@ -102,12 +105,20 @@ on('#logoutBtn', 'click', async () => {
 async function boot() {
   const me = await api('/api/me');
   state.consent = me.consentAccepted;
+  state.user = me.user;
   $('#userName').textContent = me.user.name;
   $('#userName').title = me.user.name;
   $('#userEmail').textContent = me.user.email;
   $('#userEmail').title = me.user.email;
   $('#userInitials').textContent = String(me.user.name || me.user.email || '?').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  const demoLabels = { economizar: 'Economizar por mês', reduzir: 'Reduzir alimentação', juntar: 'Juntar um valor' };
   $('#demoBadge').hidden = !me.user.is_demo;
+  $('#demoBadge').textContent = me.user.is_demo ? `Dados simulados • ${demoLabels[me.user.demo_scenario] || 'demonstração'}` : '';
+  const profileForm = $('#accountProfileForm');
+  profileForm.elements.name.value = me.user.name;
+  profileForm.elements.email.value = me.user.email;
+  [...profileForm.elements].forEach(element => { element.disabled = Boolean(me.user.is_demo); });
+  $('#demoProfileNotice').hidden = !me.user.is_demo;
   $('#authPanel').hidden = true; $('#appPanel').hidden = false;
   $('#consentNotice').hidden = state.consent;
   $('#acceptConsentBtn').hidden = state.consent;
@@ -774,7 +785,8 @@ function installmentCandidates(item) {
 }
 function forecastItemHtml(item) {
   const cancel = `<button type="button" class="secondary" data-cancel-installment="${item.id}" aria-label="Cancelar previsão da parcela ${item.installment_number} de ${item.installment_total}">Cancelar previsão</button>`;
-  return `<div class="forecast-item"><span>${escapeHtml(item.due_date.split('-').reverse().join('/'))} · ${escapeHtml(item.category)} · ${item.installment_number}/${item.installment_total}</span><strong>${money(item.amount)}</strong>${cancel}</div>`;
+  const description = item.description || 'Descrição indisponível';
+  return `<div class="forecast-item"><div class="forecast-item-info"><span class="forecast-item-description" title="${escapeHtml(description)}">${escapeHtml(description)}</span><small>${escapeHtml(item.due_date.split('-').reverse().join('/'))} · ${escapeHtml(item.category)} · Parcela ${item.installment_number}/${item.installment_total}</small></div><strong class="forecast-item-amount">${money(item.amount)}</strong>${cancel}</div>`;
 }
 function confirmationRowHtml(item) {
   const candidates = installmentCandidates(item);
@@ -921,6 +933,20 @@ on('#analyzeBtn', 'click', async () => {
 on('#exportBtn', 'click', async () => {
   const data = await api('/api/export'); const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = 'meus-dados-fintrack.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+on('#accountProfileForm', 'submit', async event => {
+  const form = event.currentTarget;
+  const updated = await api('/api/account/profile', { method: 'PUT', body: JSON.stringify(formData(form)) });
+  form.elements.password.value = '';
+  state.user = updated.user;
+  $('#userName').textContent = updated.user.name;
+  $('#userName').title = updated.user.name;
+  $('#userEmail').textContent = updated.user.email;
+  $('#userEmail').title = updated.user.email;
+  $('#userInitials').textContent = String(updated.user.name || updated.user.email || '?').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  form.elements.name.value = updated.user.name;
+  form.elements.email.value = updated.user.email;
+  toast('Dados da conta atualizados.');
 });
 on('#revokeConsentBtn', 'click', async () => {
   if (!confirm('Revogar o consentimento e apagar os dados financeiros e as cópias locais do banco? Seu nome, e-mail, senha protegida, histórico do consentimento e registros técnicos serão mantidos para preservar a conta.')) return;

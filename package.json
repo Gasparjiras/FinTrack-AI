@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --check server.js && node --check ai-service.js && node --check category-dictionary.js && node --check public/app.js && node tests/import-parser.test.js && node tests/finance-core.test.js && node tests/api.test.js"
+    "test": "node --check server.js && node --check ai-service.js && node --check category-dictionary.js && node --check reset-password.js && node --check public/app.js && node tests/import-parser.test.js && node tests/finance-core.test.js && node tests/api.test.js"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +16,6 @@
     "bcryptjs": "^3.0.3",
     "chart.js": "^4.5.1",
     "openai": "^6.45.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

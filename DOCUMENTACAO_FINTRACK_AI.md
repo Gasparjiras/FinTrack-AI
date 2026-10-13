@@ -13,11 +13,13 @@ O protótipo concentra o desenvolvimento nos componentes do short paper: cadastr
 | Categorias | Categorias padrão e personalizadas; pesquisa, filtro, edição e exclusão de regras aprendidas na conta |
 | Minha meta | Uma escolha ativa com valores personalizados e acompanhamento |
 | Análise e recomendações | Resumo, padrões, alertas e até três ações para a meta |
-| Configurações | Conta, informações sobre IA, exportação e consentimento |
+| Configurações | Edição de nome e e-mail, informações sobre IA, exportação, consentimento e exclusão da conta |
 
 Foram retirados do fluxo: PDF, múltiplas metas simultâneas, histórico de aportes, modos de intensidade, orçamento independente, pontuação financeira, fechamento mensal, análise oficial e plano obrigatório de sete dias. O banco conserva os dados antigos para compatibilidade e exportação.
 
 A última análise gerada para cada mês é persistida em `ai_analysis_history` e restaurada após um novo login. Cada registro guarda o resultado, período, origem, modelo, data, meta considerada e a impressão digital dos dados usados. Uma mudança em lançamentos, meta, parcelas ou modelo não apaga o resultado anterior: a interface o identifica como desatualizado e solicita nova geração.
+
+Na Visão geral, os compromissos dos próximos três meses são agrupados por mês e permanecem separados das despesas realizadas. A lista expansível identifica cada previsão pela descrição da compra, vencimento, categoria, número da parcela e valor. Previsões vencidas até o mês atual sem lançamento vinculado aparecem na tabela **Pagamentos para confirmar**.
 
 ## Entrada e qualidade dos dados
 
@@ -82,7 +84,13 @@ O banco pode ser isolado por `FINTRACK_DATA_DIR`, usado nos testes. A aplicaçã
 
 O arquivo `.env` com a chave da OpenAI e o diretório `data/` com contas e lançamentos são ignorados pelo Git. Apenas `.env.example`, sem chave real, pertence ao repositório. A navegação guarda a seção aberta no endereço para mantê-la após atualizar a página.
 
-O protótipo é executado localmente. O banco SQLite fica no computador que executa a aplicação e utiliza exclusão segura. Uma cópia diária é mantida em `data/backups` por até sete dias. Cópias vencidas são removidas na inicialização; revogar o consentimento ou excluir uma conta apaga as cópias locais e trunca o log de escrita para evitar que dados removidos continuem nessas estruturas.
+O usuário pode editar o nome diretamente nas Configurações. A troca do e-mail usado no acesso exige a senha atual, valida a exclusividade do novo endereço e registra a ação na auditoria sem armazenar a senha. Os cenários demonstrativos são restaurados a cada acesso e não permitem alterar esses dados.
+
+O protótipo é executado localmente e, por padrão, o servidor aceita conexões somente em `127.0.0.1`. O banco SQLite fica no computador que executa a aplicação e utiliza exclusão segura. A cópia do dia em `data/backups` é atualizada ao iniciar, a cada hora enquanto o sistema permanece aberto e ao encerrar normalmente, sempre depois de incorporar o log de escrita ao banco principal. As cópias são mantidas por até sete dias. Revogar o consentimento ou excluir uma conta remove as cópias anteriores e cria uma cópia limpa, sem os dados apagados.
+
+A exportação JSON reúne lançamentos, parcelas, categorias e limites, regras aprendidas, metas e seus históricos, análises salvas, consentimentos, fechamentos mensais e auditoria. Ela é destinada à consulta e à portabilidade; o protótipo ainda não restaura uma conta automaticamente a partir desse arquivo.
+
+Há três cenários de demonstração, todos com a mesma base fictícia de seis meses e metas diferentes: economia mensal, redução de alimentação e acumulação de um valor com prazo. Essa igualdade dos lançamentos permite observar especificamente o efeito da meta sobre a análise. O mês atual fica livre para uma importação durante a apresentação, e cada cenário é restaurado ao ser aberto.
 
 O termo de uso dos dados é imutável por versão. A versão `1.1` acrescenta registros técnicos de segurança, localização do armazenamento, retenção das cópias, efeitos distintos de revogação e exclusão e o processamento opcional pela OpenAI. Usuários de versões anteriores precisam aceitar o termo vigente para continuar usando os recursos financeiros. A interface informa que exportações JSON contêm dados pessoais e financeiros.
 

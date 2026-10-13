@@ -101,7 +101,7 @@
        <li><strong>Dados financeiros:</strong> lançamentos, observações, parcelas previstas, categorias personalizadas, regras aprendidas e meta ficam no banco SQLite do computador em que o FinTrack está sendo executado.</li>
        <li><strong>Importação e classificação:</strong> o arquivo é processado em memória e as descrições são classificadas por regras locais. O arquivo bruto não é armazenado nem enviado à IA.</li>
        <li><strong>IA opcional:</strong> somente quando você marcar essa opção e gerar recomendações, totais, categorias, indicadores agregados e dados da meta são enviados à API da OpenAI, um fornecedor externo que pode processá-los fora do Brasil. Descrições individuais, arquivo bruto e senha não são enviados. A OpenAI informa que o conteúdo da API não é usado para treinamento por padrão e que logs de monitoramento podem ser mantidos por até 30 dias.</li>
-       <li><strong>Prazo e cópias locais:</strong> cópias de segurança do banco são mantidas por até 7 dias. Revogar o consentimento apaga os dados financeiros e essas cópias, mas mantém os dados necessários para acessar a conta. Excluir a conta remove também os dados de identificação e as cópias locais.</li>
+       <li><strong>Prazo e cópias locais:</strong> cópias de segurança do banco são mantidas por até 7 dias. Revogar o consentimento apaga os dados financeiros e substitui as cópias anteriores por uma cópia limpa, mantendo os dados necessários para acessar a conta. Excluir a conta remove também os dados de identificação.</li>
        <li><strong>Seus controles:</strong> nas Configurações, você pode acessar e exportar seus dados, corrigir registros, revogar o consentimento e limpar os dados financeiros ou excluir completamente a conta.</li>
        <li><strong>Escolha:</strong> sem aceitar este termo, não é possível criar uma conta nem utilizar os recursos financeiros. A demonstração com dados fictícios continua disponível.</li>
       </ul>
@@ -116,14 +116,25 @@
     </form>
     <div class="demo-box">
      <strong>
-      Conheça o protótipo
+      Explore os cenários de demonstração
      </strong>
      <p>
-      Conta separada com dados simulados para demonstração.
+      Os três cenários usam os mesmos seis meses de dados simulados. Escolha uma meta para comparar as análises.
      </p>
-     <button class="secondary" id="demoLoginBtn" type="button">
-      Abrir demonstração
-     </button>
+     <div class="demo-scenarios">
+      <button class="secondary demo-scenario" data-demo-scenario="economizar" type="button">
+       <strong>Economizar por mês</strong>
+       <span>Comparar o resultado mensal com uma economia de R$ 500.</span>
+      </button>
+      <button class="secondary demo-scenario" data-demo-scenario="reduzir" type="button">
+       <strong>Reduzir alimentação</strong>
+       <span>Acompanhar um limite de R$ 350 para a categoria.</span>
+      </button>
+      <button class="secondary demo-scenario" data-demo-scenario="juntar" type="button">
+       <strong>Juntar um valor</strong>
+       <span>Planejar R$ 3.000 em seis meses, partindo de R$ 600.</span>
+      </button>
+     </div>
     </div>
    </section>
   </main>
@@ -686,6 +697,32 @@
      </p>
      <article class="card">
       <h2>
+       Dados da conta
+      </h2>
+      <form class="settings-account-form" id="accountProfileForm">
+       <div class="form-grid two">
+        <label>
+         Nome
+         <input autocomplete="name" maxlength="80" minlength="3" name="name" required="" type="text"/>
+        </label>
+        <label>
+         E-mail
+         <input autocomplete="email" name="email" required="" type="email"/>
+        </label>
+       </div>
+       <label>
+        Senha atual
+        <input autocomplete="current-password" name="password" type="password"/>
+        <small>Necessária somente para alterar o e-mail usado para entrar.</small>
+       </label>
+       <p class="hint" hidden="" id="demoProfileNotice">Os dados da conta demonstrativa são restaurados automaticamente e não podem ser alterados.</p>
+       <button>
+        Salvar dados da conta
+       </button>
+      </form>
+     </article>
+     <article class="card">
+      <h2>
        Uso da IA
       </h2>
       <p id="aiStatus">
@@ -704,13 +741,13 @@
        Seus dados
       </h2>
       <p>
-       Os dados ficam no banco SQLite do computador em que esta instalação está sendo executada. Cópias locais do banco são mantidas por até 7 dias e apagadas ao revogar o consentimento ou excluir a conta. Você pode exportar seus registros, incluindo históricos de versões anteriores.
+       Os dados ficam no banco SQLite do computador em que esta instalação está sendo executada. Cópias locais do banco são mantidas por até 7 dias e substituídas por uma cópia já limpa ao revogar o consentimento ou excluir a conta. Você pode exportar seus registros e históricos em JSON para consulta; a restauração automática desse arquivo ainda não está disponível.
       </p>
       <details class="privacy-settings-summary">
        <summary>Revisar informações sobre seus dados</summary>
        <ul class="privacy-summary">
         <li>Quem administra esta instalação local controla o armazenamento. Nome, e-mail, hash da senha e registros técnicos de segurança permanecem enquanto a conta existir.</li>
-        <li>Revogar o consentimento apaga lançamentos, metas, regras, categorias personalizadas, análises e cópias locais, mantendo somente a conta, o histórico do consentimento e registros técnicos.</li>
+        <li>Revogar o consentimento apaga lançamentos, metas, regras, categorias personalizadas e análises. As cópias anteriores são removidas e substituídas por uma cópia limpa, mantendo somente a conta, o histórico do consentimento e registros técnicos.</li>
         <li>Você pode acessar e exportar os dados, corrigir registros e solicitar a eliminação completa excluindo a conta.</li>
         <li>Sem aceitar o termo, os recursos financeiros ficam indisponíveis. A IA continua sendo uma escolha separada em cada análise.</li>
        </ul>

@@ -23,6 +23,7 @@ async function main() {
     mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
     Object.assign(process.env, { FINTRACK_DATA_DIR: dir, PORT: '0', OPENAI_API_KEY: 'test-key', OPENAI_MODEL: 'test-model', OPENAI_BASE_URL: `http://127.0.0.1:${mock.address().port}/v1` });
     testApi = require('../server'); server = testApi.startServer(); await once(server, 'listening');
+    assert.equal(server.address().address, '127.0.0.1', 'O servidor local não deve ficar exposto à rede');
     const base = `http://localhost:${server.address().port}`;
     let cookie = '';
     async function call(route, method = 'GET', data, expected = 200) {
@@ -59,6 +60,17 @@ async function main() {
     await call(`/api/category-rules/${accountRule.id}`, 'PUT', { merchantPattern: 'petshop amigo', category: 'Mercado' }, 404);
     await call(`/api/category-rules/${accountRule.id}`, 'DELETE', undefined, 404);
     await call('/api/login', 'POST', { email: 'teste@example.test', password: 'Teste12345' });
+    let profile = await call('/api/account/profile', 'PUT', { name: 'Teste Atualizado', email: 'teste@example.test' });
+    assert.equal(profile.user.name, 'Teste Atualizado', 'O nome pode ser alterado sem reenviar a senha');
+    await call('/api/account/profile', 'PUT', { name: 'Teste Atualizado', email: 'outra@example.test', password: 'Teste12345' }, 409);
+    await call('/api/account/profile', 'PUT', { name: 'Teste Atualizado', email: 'novo@example.test' }, 401);
+    profile = await call('/api/account/profile', 'PUT', { name: 'Teste Atualizado', email: 'novo@example.test', password: 'Teste12345' });
+    assert.equal(profile.user.email, 'novo@example.test');
+    await call('/api/account/profile', 'PUT', { name: 'Teste FinTrack', email: 'teste@example.test', password: 'Teste12345' });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await call('/api/login', 'POST', { email: 'bloqueado@example.test', password: 'Incorreta123' }, 401);
+    }
+    await call('/api/login', 'POST', { email: 'bloqueado@example.test', password: 'Incorreta123' }, 429);
     await call(`/api/categories/${category.id}`, 'PUT', { name: 'Pets', color: '#16734b' });
     const goal1 = (await call('/api/goal')).goal.id;
     await call('/api/goal', 'PUT', { objective: 'economizar', targetValue: 100 });
@@ -266,10 +278,17 @@ async function main() {
     assert.ok(!JSON.stringify(JSON.parse(requests.at(-1).input)).includes('description'), 'A análise externa não recebe descrições individuais');
     const cachedCount = requests.length;
     result = await call(`/api/ai/analysis?month=${sourceMonth}&useAI=1`); assert.equal(result.aiStatus.cached, true); assert.equal(requests.length, cachedCount);
+    let exported = await call('/api/export');
+    assert.ok(exported.categories.some(item => item.name === 'Pets'), 'A exportação inclui configurações das categorias');
+    assert.ok(exported.auditHistory.length, 'A exportação inclui o histórico técnico da conta');
+    assert.equal(exported.aiHistory.filter(item => item.month === sourceMonth).length, 1, 'Repetir uma análise idêntica não duplica o histórico');
     await call('/api/logout', 'POST', {});
     await call('/api/login', 'POST', { email: 'teste@example.test', password: 'Teste12345' });
     result = await call(`/api/ai/analysis?month=${sourceMonth}`);
     assert.equal(result.savedAnalysis.stale, false, 'A última análise volta a ficar disponível depois de sair e entrar');
+    await call('/api/transactions', 'POST', { description: 'Mudança em outro período', date: july, value: -7, category: 'Pets' }, 201);
+    result = await call(`/api/ai/analysis?month=${sourceMonth}`);
+    assert.equal(result.savedAnalysis.stale, false, 'Alterar outro mês não desatualiza a análise do período selecionado');
     await call('/api/goal', 'PUT', { objective: 'economizar', targetValue: 50 });
     result = await call(`/api/ai/analysis?month=${sourceMonth}`);
     assert.equal(result.savedAnalysis.stale, true, 'Alterações posteriores mantêm a última análise, marcada como desatualizada');
@@ -298,6 +317,9 @@ async function main() {
     assert.ok(!(await call('/api/transactions')).some(item => selectedIds.includes(item.id)));
     await call('/api/monthly-closings', 'POST', {}, 404);
     const backupDir = path.join(dir, 'backups');
+    const privacyDb = new DatabaseSync(path.join(dir, 'app.db'));
+    privacyDb.prepare("UPDATE categories SET monthly_limit = 123 WHERE user_id = ? AND is_system = 1 AND name = 'Mercado'").run(owner);
+    privacyDb.close();
     fs.writeFileSync(path.join(backupDir, 'app-2026-09-20.db'), 'cópia de teste');
     await call('/api/consent/revoke', 'POST', {});
     assert.ok(!fs.existsSync(path.join(backupDir, 'app-2026-09-20.db')), 'Revogação remove cópias locais que poderiam conservar os dados');
@@ -306,12 +328,44 @@ async function main() {
     await call('/api/consent/accept', 'POST', {});
     assert.equal((await call('/api/transactions')).length, 0);
     assert.equal((await call('/api/goal')).goal, null);
+    assert.equal((await call('/api/categories')).find(item => item.name === 'Mercado').monthly_limit, 0, 'Revogação também limpa limites das categorias padrão');
+    const cleanBackupPath = path.join(backupDir, `app-${new Date().toISOString().slice(0, 10)}.db`);
+    const cleanBackup = new DatabaseSync(cleanBackupPath, { readOnly: true });
+    assert.equal(cleanBackup.prepare('PRAGMA integrity_check').get().integrity_check, 'ok', 'A cópia criada após a revogação é íntegra');
+    assert.equal(cleanBackup.prepare('SELECT COUNT(*) AS total FROM transactions WHERE user_id = ?').get(owner).total, 0, 'A nova cópia não conserva os dados revogados');
+    cleanBackup.close();
     fs.writeFileSync(path.join(backupDir, 'app-2026-09-21.db'), 'cópia de teste');
     await call('/api/account', 'DELETE', { password: 'Teste12345' });
     assert.ok(!fs.existsSync(path.join(backupDir, 'app-2026-09-21.db')), 'Exclusão da conta remove cópias locais');
-    await call('/api/demo/login', 'POST', {});
-    assert.ok((await call(`/api/ai/analysis?month=${sourceMonth}`)).goal);
-    console.log('API OK: categorias personalizadas, metas, CSV/XLSX/XLS, PDF rejeitado, duplicatas, IA simulada, cache, consentimento e demo.');
+    const demoExpectations = {
+      economizar: { objective: 'economizar', target: 500 },
+      reduzir: { objective: 'reduzir', target: 350, category: 'Alimentação' },
+      juntar: { objective: 'juntar', target: 3000 },
+    };
+    let sharedDemoSignature = null;
+    for (const [scenario, expected] of Object.entries(demoExpectations)) {
+      const login = await call('/api/demo/login', 'POST', { scenario });
+      assert.equal(login.scenario, scenario);
+      assert.equal(Object.hasOwn(login, 'password'), false, 'O acesso demonstrativo não expõe senha');
+      await call('/api/account/profile', 'PUT', { name: 'Demonstração alterada', email: `alterada-${scenario}@example.test` }, 403);
+      const demoRows = await call('/api/transactions');
+      const demoMonths = [...new Set(demoRows.map(item => item.date.slice(0, 7)))];
+      assert.equal(demoMonths.length, 6, 'Cada cenário contém seis meses completos de histórico');
+      assert.ok(!demoRows.some(item => item.date.startsWith(new Date().toISOString().slice(0, 7))), 'O mês atual fica livre para a importação apresentada ao vivo');
+      const signature = JSON.stringify(demoRows.map(item => [item.description, item.value, item.date, item.category]));
+      if (sharedDemoSignature) assert.equal(signature, sharedDemoSignature, 'Os cenários usam a mesma base financeira');
+      else sharedDemoSignature = signature;
+      const demoGoal = (await call('/api/goal')).goal;
+      assert.equal(demoGoal.objective, expected.objective);
+      assert.equal(demoGoal.target_value, expected.target);
+      if (expected.category) assert.equal(demoGoal.target_category, expected.category);
+      const latestDemoMonth = demoMonths.sort().at(-1);
+      const demoAnalysis = await call(`/api/ai/analysis?month=${latestDemoMonth}`);
+      assert.equal(demoAnalysis.savedAnalysis.stale, false, 'O cenário abre com uma análise local atualizada e pronta para apresentação');
+      assert.equal(demoAnalysis.goal.objective, expected.objective);
+    }
+    await call('/api/demo/login', 'POST', {}, 400);
+    console.log('API OK: categorias personalizadas, metas, CSV/XLSX/XLS, PDF rejeitado, duplicatas, IA simulada, cache, consentimento e três cenários demo.');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     if (mock) await new Promise(resolve => mock.close(resolve));

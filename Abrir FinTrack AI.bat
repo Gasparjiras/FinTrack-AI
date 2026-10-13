@@ -11,7 +11,7 @@ if not exist node_modules (
   echo Instalando dependencias...
   npm install
 )
-start "" "http://localhost:3000"
-echo FinTrack AI aberto em http://localhost:3000
+start "" "http://127.0.0.1:3000"
+echo FinTrack AI aberto em http://127.0.0.1:3000
 node server.js
 pause
